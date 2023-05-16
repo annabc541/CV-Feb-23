@@ -3,10 +3,9 @@ library(lubridate)
 
 #to look at zeroes in the raw data and be able to find when they start and end
 
-setwd("~/CV Feb 23/raw_data")
 Sys.setenv(TZ = "UTC")
 
-raw_dat = read.csv("reagents1.csv") %>% 
+raw_dat = read.csv("data/raw_data/reagents1.csv") %>% 
   mutate(date = glue::glue("{Date} {Time}"),
        date = ymd_hms(date)) %>% 
   arrange(date) %>% 

@@ -4,12 +4,11 @@
 library(tidyverse)
 library(lubridate)
 
-setwd("~/CV Feb 23/raw_data")
 
 
 # Importing data ----------------------------------------------------------
 
-files = list.files(pattern = ".spec",full.names=TRUE)
+files = list.files("data/raw_data/super_raw",pattern = ".spec",full.names=TRUE)
 datList = list()
 
 for(index in 1:length(files)) {
