@@ -8,6 +8,15 @@ library(tayloRswift)
 
 Sys.setenv(TZ = "UTC")
 
+cal1_ch1 = 566.46
+cal1_ch2 = 589.64
+cal2_ch1 = 618.89
+cal2_ch2 = 643.18
+
+date_corr1 = 22.75 * 60
+date_corr2 = 23.67 * 60
+
+se = 0.999
 
 # Functions ---------------------------------------------------------------
 
@@ -17,7 +26,7 @@ ppt <- function(ch1,ch2,se){
   return(x)
 }
 
-#for despiking
+#for night zeroes and despiking
 tidy_rle = function(rleObj){
   
   require(dplyr)
@@ -78,12 +87,6 @@ wip_dat1 = raw_dat1 %>%
          ch2_zeroes = na.approx(ch2_zeroes,na.rm = F)) %>% 
   #fill the values before first zero has been measured
   fill(ch1_zeroes,ch2_zeroes,.direction = "up")
-
-#calibration factor from excel
-cal1_ch1 = 566.46
-cal1_ch2 = 589.64
-date_corr1 = 22.75 * 60
-se = 0.999
 
 #apply zeroes and cal correction
 
@@ -199,12 +202,7 @@ wip_dat2 = raw_dat2 %>%
          ch1_zeroes = na.approx(ch1_zeroes,na.rm = F),
          ch2_zeroes = na.approx(ch2_zeroes,na.rm = F)) %>% 
   #fill the values before first zero has been measured
-  fill(ch1_zeroes,ch2_zeroes,.direction = "up")
-
-cal2_ch1 = 618.89
-cal2_ch2 = 643.18
-date_corr2 = 23.67 * 60
-se = 0.999
+  fill(ch1_zeroes,ch2_zeroes,.direction = "updown")
 
 #apply zeroes
 
@@ -255,7 +253,8 @@ final_dat2 = wip_dat2 %>%
                            between(date,as.POSIXct("2023-02-24 19:59"),as.POSIXct("2023-02-24 20:38")) ~ 2,
                            between(date,as.POSIXct("2023-02-25 02:05"),as.POSIXct("2023-02-25 02:54")) ~ 2,
                            between(date,as.POSIXct("2023-02-25 08:30"),as.POSIXct("2023-02-25 09:09")) ~ 2,
-                           between(date,as.POSIXct("2023-02-25 09:09"),as.POSIXct("2023-02-26 08:26")) ~ 2,
+                           between(date,as.POSIXct("2023-02-25 09:09"),as.POSIXct("2023-02-26 10:15")) ~ 5, #liquid pump at 20
+                           between(date,as.POSIXct("2023-02-26 15:52"),as.POSIXct("2023-02-26 16:32")) ~ 2,
                            TRUE ~ 0)))
 
 final_dat2 %>%
@@ -277,9 +276,6 @@ ggsave('something_else.png',
        units = 'cm') 
 
 # Second set of reagents - nighttime zeroes -------------------------------
-
-cal2_ch2 = 643.18
-date_corr2 = 23.67 * 60
 
 #1 for water/abs closed
 #2 for zero
@@ -324,7 +320,8 @@ night_zeroing = raw_dat2 %>%
                            between(date,as.POSIXct("2023-02-24 19:59"),as.POSIXct("2023-02-24 20:38")) ~ 2,
                            between(date,as.POSIXct("2023-02-25 02:05"),as.POSIXct("2023-02-25 02:54")) ~ 2,
                            between(date,as.POSIXct("2023-02-25 08:30"),as.POSIXct("2023-02-25 09:09")) ~ 2,
-                           between(date,as.POSIXct("2023-02-25 09:09"),as.POSIXct("2023-02-26 08:26")) ~ 2,
+                           between(date,as.POSIXct("2023-02-25 09:09"),as.POSIXct("2023-02-26 10:15")) ~ 5, #liquid pump at 20
+                           between(date,as.POSIXct("2023-02-26 15:52"),as.POSIXct("2023-02-26 16:32")) ~ 2,
                            TRUE ~ 0)),
          night_flag = ifelse(time > 21 | time < 4,1,0)) #flag when it's dark
 
@@ -358,9 +355,9 @@ night_avg = night_flagged %>%
 final_dat_night = night_zeroing %>% 
   mutate(idx = 1:nrow(.)) %>% 
   left_join(night_avg) %>% 
-  mutate(ch1_zeroes = na.approx(ch1_night,na.rm = F),
-         ch2_zeroes = na.approx(ch2_night,na.rm = F)) %>% 
-  fill(ch1_zeroes,ch2_zeroes,.direction = "up") %>% 
+  mutate(ch1_zeroes = ifelse(date < "2023-02-24 08:40",na.approx(ch1_night,na.rm = F),ch1_night),
+         ch2_zeroes = ifelse(date < "2023-02-24 08:40",na.approx(ch2_night,na.rm = F),ch2_night)) %>% 
+  fill(ch1_zeroes,ch2_zeroes,.direction = "updown") %>% 
   mutate(ch1_zeroed = ch1 - ch1_zeroes,
          ch2_zeroed = ch2 - ch2_zeroes,
          ch1_ppt = ch1_zeroed * cal2_ch1,
@@ -436,7 +433,7 @@ despiked_dat = despiking %>%
 
 despiked_dat_night = despiking_night %>% 
   mutate(idx = 1:nrow(.)) %>% 
-  left_join(no_noise, "idx") %>% #joins two dfs by their row number
+  left_join(no_noise_night, "idx") %>% #joins two dfs by their row number
   select(-idx) %>% 
   mutate(id = ifelse(is.na(id), 0, id),
          idx_2 = 1:nrow(.)) %>% #makes id (group) = 0 when there are instrumental noise spikes
@@ -449,7 +446,7 @@ despiked_dat_night = despiking_night %>%
 
 despiked_dat_night %>% 
   mutate(flagged_hono = ifelse(instrumental_noise_flag == 0,flagged_hono,NA_real_)) %>% 
-  timeAverage("5 min") %>%
+  timeAverage("1 hour") %>%
   mutate(doy = yday(date)) %>% 
   # filter(
   # doy != 57,
@@ -467,7 +464,7 @@ despiked_dat_night %>%
   ) +
   NULL
 
-ggsave('final_despiked_hono.png',
+ggsave('final_despiked_hono_night.png',
        path = "output/plots",
        width = 30,
        height = 12,
@@ -487,25 +484,26 @@ write.csv(processed_dat,"output/data/processed_in_r.csv",row.names = FALSE)
 
 # Comparing nighttime vs zero air zeroes ----------------------------------
 
-comparison = despiked_dat_night %>% 
+comparison_all_dat = despiked_dat_night %>% 
   rename(night_zero = flagged_hono) %>% 
   select(date,night_zero) %>% 
   left_join(despiked_dat,by = "date") %>% 
   select(date,night_zero,zero_air = flagged_hono,flag = instrumental_noise_flag)
 
-comparison %>% 
-  filter(flag == 0,
-         date > "2023-02-17 09:10") %>% 
+comparison_all_dat %>% 
+  filter(flag == 0) %>% 
   pivot_longer(c(zero_air,night_zero)) %>% 
-  ggplot(aes(date,value,col = name)) +
+  ggplot(aes(date,value)) +
   geom_path() +
   labs(x = "Date",
        y = "HONO / ppt",
        col = NULL) +
+  # scale_color_taylor() +
+  facet_grid(rows = vars(name)) +
   scale_x_datetime(date_breaks = "1 day",date_labels = "%b %d") +
   theme(legend.position = "top")
 
-ggsave('night_zero_vs_zero_air.png',
+ggsave('night_zero_vs_zero_air_facet.png',
        path = "output/plots_analysis/zeroing",
        width = 30,
        height = 12,
