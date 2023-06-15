@@ -11,13 +11,17 @@ library(tayloRswift)
 
 Sys.setenv(TZ = "UTC")
 
-cal1_ch1 = 566.46
-cal1_ch2 = 589.64
+
+cal0.5_ch1 = 326.01
+cal0.5_ch2 = 344.74
+cal1_ch1 = 566.46 #also used for period without calibrations
+cal1_ch2 = 589.64 #also used for period without calibrations
 cal2_ch1 = 618.89
 cal2_ch2 = 643.18
 
 date_corr1 = 22.75 * 60
 date_corr2 = 23.67 * 60
+date_corr3 = 22.33 * 60
 
 se = 0.999
 
@@ -190,6 +194,7 @@ wip_dat2 = raw_dat2 %>%
   #fill the values before first zero has been measured
   fill(ch1_zeroes,ch2_zeroes,.direction = "updown")
 
+
 final_dat2 = wip_dat2 %>% 
   mutate(date = date - date_corr2,
          ch1_zeroed = ch1 - ch1_zeroes,
@@ -215,8 +220,6 @@ final_dat2 = wip_dat2 %>%
 
 
 # Second set of reagents - night zeroes-----------------------------------------------------------
-
-#use night values after power cut
 
 night_zeroing = raw_dat2 %>%
   filter(date > "2023-02-21") %>% #data after power cut
@@ -281,7 +284,7 @@ night_avg = night_avg %>% arrange(idx)
 
 final_dat_night = night_zeroing %>% 
   mutate(idx = 1:nrow(.)) %>% 
-  left_join(night_avg) %>% 
+  left_join(night_avg) %>%
   mutate(ch1_zeroes = na.approx(ch1_inter,na.rm = F),
          ch2_zeroes = na.approx(ch2_inter,na.rm = F)) %>% 
   fill(ch1_zeroes,ch2_zeroes,.direction = "up") %>%
@@ -308,9 +311,64 @@ final_dat_night = night_zeroing %>%
 #   # scale_color_taylor("speakNowLive")
 #   NULL
 
+
+# Data without a proper calibration ---------------------------------------
+
+raw_dat3 = read.csv("data/raw_data/reagents0.5_raw.csv") %>% 
+  mutate(date = dmy_hms(date))
+
+#create flag for zeroing
+#flag only when values are actually low
+
+wip_dat3 = raw_dat3 %>% 
+  mutate(zeroing = case_when(between(date,as.POSIXct("2023-02-07 09:15"),as.POSIXct("2023-02-07 09:45")) ~ 1,
+                             between(date,as.POSIXct("2023-02-07 15:57"),as.POSIXct("2023-02-07 16:13")) ~ 1,
+                             between(date,as.POSIXct("2023-02-07 21:58"),as.POSIXct("2023-02-07 22:15")) ~ 1,
+                             between(date,as.POSIXct("2023-02-08 03:55"),as.POSIXct("2023-02-08 04:15")) ~ 1,
+                             between(date,as.POSIXct("2023-02-08 15:14"),as.POSIXct("2023-02-08 15:31")) ~ 1,
+                             between(date,as.POSIXct("2023-02-08 23:38"),as.POSIXct("2023-02-08 23:50")) ~ 1,
+                             between(date,as.POSIXct("2023-02-09 05:40"),as.POSIXct("2023-02-09 05:55")) ~ 1,
+                             TRUE ~ 0),
+         #create columns with only zero values
+         ch1_zeroes = ifelse(zeroing == 1, ch1,NA_real_),
+         ch2_zeroes = ifelse(zeroing == 1, ch2,NA_real_),
+         #interpolate between zeroes
+         ch1_zeroes = na.approx(ch1_zeroes,na.rm = F),
+         ch2_zeroes = na.approx(ch2_zeroes,na.rm = F)) %>% 
+  #fill the values before first zero has been measured
+  fill(ch1_zeroes,ch2_zeroes,.direction = "updown")
+
+#apply zeroes and cal correction
+
+#1 for water/abs closed
+#2 for zero
+#3 for cal
+#4 for air in abs
+#5 other
+
+final_dat3 = wip_dat3 %>% 
+  mutate(date = date - date_corr3,
+         ch1_zeroed = ch1 - ch1_zeroes,
+         ch2_zeroed = ch2 - ch2_zeroes,
+         ch1_ppt = ch1_zeroed * cal0.5_ch1,
+         ch2_ppt = ch2_zeroed * cal0.5_ch2,
+         hono = ppt(ch1_ppt,ch2_ppt,se),
+         flag = case_when(date < "2023-02-07 10:00" ~ 5,#not sure why, just looks weird,zero in there somewhere
+                          between(date,as.POSIXct("2023-02-07 15:20"),as.POSIXct("2023-02-07 16:05")) ~ 2,
+                          between(date,as.POSIXct("2023-02-07 21:20"),as.POSIXct("2023-02-07 22:25")) ~ 2,
+                          between(date,as.POSIXct("2023-02-08 03:00"),as.POSIXct("2023-02-08 04:45")) ~ 5,#zero somewhere in here, also insturmental noise spikes
+                          between(date,as.POSIXct("2023-02-08 09:00"),as.POSIXct("2023-02-08 10:15")) ~ 5,#instrumental noise spike weridness, as well as zero
+                          between(date,as.POSIXct("2023-02-08 12:30"),as.POSIXct("2023-02-08 14:00")) ~ 4,
+                          between(date,as.POSIXct("2023-02-08 14:30"),as.POSIXct("2023-02-08 15:45")) ~ 2,#changed zero value
+                          between(date,as.POSIXct("2023-02-08 16:45"),as.POSIXct("2023-02-08 17:45")) ~ 2,
+                          between(date,as.POSIXct("2023-02-08 23:00"),as.POSIXct("2023-02-09 00:30")) ~ 2,#zeros and instrumental noise spikes
+                          between(date,as.POSIXct("2023-02-09 04:45"),as.POSIXct("2023-02-09 05:45")) ~ 2,
+                          date > "2023-02-09 09:30" ~ 5,
+                          TRUE ~ 0))
+
 # Despiking data -------------------------------------
 
-hono_dat = bind_rows(final_dat1,final_dat2,final_dat_night) %>% 
+hono_dat = bind_rows(final_dat3,final_dat1,final_dat2,final_dat_night) %>% 
   arrange(date)
 
 #using despike function (import oce library) to automatically find and remove instrumental noise spikes
@@ -341,26 +399,66 @@ despiked_dat = despiking %>%
          idx = n():1,
          instrumental_noise_flag = ifelse(idx < 7, NA_real_,instrumental_noise_flag)) #removes last x values of group 
 
+despiked_dat %>% 
+  # filter(date < "2023-02-07 18:00" & date > "2023-02-07 12:00") %>% 
+  mutate(flagged_hono = ifelse(instrumental_noise_flag == 0,flagged_hono,NA_real_)) %>%
+  timeAverage("15 min") %>% 
+  ggplot(aes(date,flagged_hono)) +
+  scale_x_datetime(date_breaks = "1 day",date_labels = "%d/%m") +
+  geom_path()
+
 # Saving fully processed data ---------------------------------------------
 
 #flag = 6 when there's a spike due to instrumental noise
 #flag = 7 to indicate data is low quality - due to no proper zeroes available
 processed_dat = despiked_dat %>% 
   ungroup() %>% 
-  mutate(flag = case_when(instrumental_noise_flag == 1 ~ 6,
-                          between(date,as.POSIXct("2023-02-19"),as.POSIXct("2023-02-21")) & flag == 0 ~ 7,
-                          date > "2023-02-24 08:41" & flag == 0 ~ 7,
-                          TRUE ~ flag),
+  mutate(flag = case_when(instrumental_noise_flag == 1 ~ 6, TRUE ~ flag),
+         low_quality_flag = case_when(between(date,as.POSIXct("2023-02-19"),as.POSIXct("2023-02-21")) ~ 1, #not properly zeroed
+                                      date > "2023-02-24 08:41" ~ 1, #not properly zeroed
+                                      date < "2023-02-09 12:00" ~ 1, #not properly calibrated
+                                      TRUE ~ 0),
          date = date + 3600) %>% #data in UTC
-  select(date,hono,flag) %>% 
-  timeAverage("5 min")
+  mutate(hono = ifelse(flag == 0,hono,NA_real_)) %>% 
+  timeAverage("5 min") %>%
+  select(date,hono,low_quality_flag) %>% 
+  mutate(low_quality_flag = ifelse(low_quality_flag == 0, low_quality_flag,1))
 
-processed_dat %>% 
-  mutate(hono = ifelse(flag == 0 | flag == 7,hono,NA_real_)) %>% 
-  ggplot(aes(date,hono,col = flag)) +
+processed_dat %>%
+  timeAverage("5 min") %>% 
+  ggplot(aes(date,hono,col = low_quality_flag)) +
   geom_path()
 
-write.csv(processed_dat,"output/data/processed_in_r.csv",row.names = FALSE)
+ggsave('processing_all_cal2.png',
+       path = "output/plots",
+       width = 30,
+       height = 12,
+       units = 'cm')
+
+write.csv(processed_dat,"output/data/processed_in_r2.csv",row.names = FALSE)
 
 
 
+
+# What cal values to use for the first few days of data? ------------------
+
+#deragned plotting of data processed using the calibration values from the weird calibrations
+#and the values for cal 1 
+
+processed_dat1 = processed_dat %>% 
+  select(date,hono_og = hono)
+
+processed_dat2 = processed_dat %>% 
+  rename(hono_all_cal = hono)
+
+
+processed_dat = left_join(processed_dat2,processed_dat1)
+
+processed_dat %>% 
+  # filter(date < "2023-02-09 12:00") %>% 
+  rename(hono_cal2 = hono_og,
+         hono_cal1 = hono_all_cal) %>% 
+  pivot_longer(c(hono_cal2,hono_cal1)) %>% 
+  ggplot(aes(date,value,col = low_quality_flag)) +
+  geom_path() +
+  facet_grid(rows = vars(name))
