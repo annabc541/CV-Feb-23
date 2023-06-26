@@ -65,18 +65,18 @@ hono23 %>%
                           date > "2023-02-21" ~ "Night zeroes",
                           TRUE ~ "Good data")) %>% 
   ggplot(aes(date,hono,col = flag)) +
-  geom_path() +
+  geom_path(size = 0.8) +
   scale_color_viridis(discrete = TRUE) +
   labs(x = NULL,
-       y = "HONO / ppt",
+       y = "HONO (ppt)",
        color = NULL) +
   theme_bw() +
   theme(legend.position = "bottom") +
   scale_x_datetime(date_breaks = "1 day",date_labels = "%d/%m") +
   NULL
 
-ggsave('hono_qc.png',
-       path = "output/plots_new_dat",
+ggsave('hono_qc.svg',
+       path = "output/plots/leeds_meeting",
        width = 30,
        height = 12,
        units = 'cm')
@@ -118,22 +118,22 @@ ggsave('air_masses_aug19.png',
 
 dat %>% 
   filter(campaign == "February 2023") %>% 
-  timeAverage("15 min") %>% 
+  timeAverage("1 hour") %>% 
   mutate(sahara = na.approx(sahara,na.rm = F)) %>% 
   fill(sahara,.direction = "up") %>% 
   ggplot(aes(date,hono,col = sahara)) +
   geom_path(size = 0.8) +
   scale_color_viridis() +
   labs(x = NULL,
-       y = "HONO / ppt",
+       y = "HONO (ppt)",
        color = "Sahara %") +
   theme_bw() +
   # theme(legend.position = "top") +
   scale_x_datetime(date_breaks = "1 day",date_labels = "%d/%m") +
   NULL
 
-ggsave('hono_j_sahara_feb23.png',
-       path = "output/plots_new_dat",
+ggsave('hono_j_sahara_feb23.svg',
+       path = "output/plots/leeds_meeting",
        width = 30,
        height = 12,
        units = 'cm')
@@ -142,25 +142,28 @@ ggsave('hono_j_sahara_feb23.png',
 # HONO, NO and NOx colour coded by Saharan air mass -----------------------
 
 dat %>% 
-  filter(campaign == "August 2019") %>%
+  filter(date > "2023-02-03" & date < "2023-02-28") %>%
   timeAverage("1 hour") %>% 
   mutate(sahara = na.approx(sahara,na.rm = F)) %>% 
   fill(sahara,.direction = "up") %>% 
-  pivot_longer(c(hono,no,no2)) %>% 
+  rename('NO[2]' = no2,
+         NO = no,
+         HONO = hono) %>% 
+  pivot_longer(c(NO,'NO[2]')) %>% 
   ggplot(aes(date,value,col = sahara)) +
   geom_path(size = 0.8) +
   scale_color_viridis() +
-  facet_grid(rows = vars(name),scales = "free_y") +
+  facet_grid(rows = vars(name),scales = 'free_y',labeller = label_parsed) +
   labs(x = NULL,
-       y = "ppt",
+       y = expression(NO[x]~(ppt)),
        color = "Sahara %") +
   theme_bw() +
   # theme(legend.position = "top") +
   scale_x_datetime(date_breaks = "1 day",date_labels = "%d/%m") +
   NULL
 
-ggsave('hono_nox_aug19.png',
-       path = "output/plots",
+ggsave('nox_feb23.svg',
+       path = "output/plots/leeds_meeting",
        width = 30,
        height = 12,
        units = 'cm')
@@ -168,7 +171,7 @@ ggsave('hono_nox_aug19.png',
 # Comparing years ---------------------------------------------------------
 
 dat %>% 
-  timeAverage("15 min") %>%
+  timeAverage("1 hour") %>%
   mutate(campaign = case_when (date <= "2019-08-29 00:55" ~ "August 2019",
                                between(date,as.POSIXct("2020-02-14 01:00"),as.POSIXct("2020-02-27 00:55")) ~ "February 2020",
                                date >= "2023-02-07 08:35" ~ "February 2023",
@@ -180,7 +183,7 @@ dat %>%
   geom_path(size = 0.8) +
   scale_color_viridis() +
   labs(x = NULL,
-       y = "HONO / ppt",
+       y = "HONO (ppt)",
        color = "Sahara %") +
   theme_bw() +
   facet_wrap(vars(campaign),scales = "free_x",ncol = 1) +
@@ -188,8 +191,8 @@ dat %>%
   scale_x_datetime(date_breaks = "1 day",date_labels = "%d/%m") +
   NULL
 
-ggsave('hono_across_the_years.png',
-       path = "output/plots_new_dat",
+ggsave('hono_across_the_years.svg',
+       path = "output/plots/leeds_meeting",
        width = 30,
        height = 12,
        units = 'cm')
@@ -206,7 +209,7 @@ diurnals = dat %>%
                          campaign == "August 2019" & date > "2019-08-24" ~ NA_real_,
                          TRUE ~ no2),
          hono = ifelse(campaign == "August 2019" & date > "2019-08-24",NA_real_,hono)) %>% 
-  pivot_wider(names_from = campaign,values_from = no)
+  pivot_wider(names_from = campaign,values_from = no2)
 
 diurnal = diurnals %>% 
   timeVariation(pollutant = c("August 2019","February 2020","February 2023"))
@@ -215,19 +218,19 @@ diurnal_dat = diurnal$data$hour
 
 diurnal_dat %>% 
   ggplot(aes(hour,Mean,col = variable)) +
-  geom_line(size = 1) +
+  geom_path(size = 0.8) +
   # facet_grid(cols = vars(variable),scales = "free_y") +
   scale_color_manual(values = viridis(3)) +
   theme_bw() +
   labs(x = "Hour of day (UTC)",
-       y = "NO / ppt",
+       y = expression(NO[2]~(ppt)),
        color = NULL) +
-  # scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
+  scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
   # ylim(-1,12) +
   theme(legend.position = "top")
 
-ggsave('no_three_campaigns.png',
-       path = "output/plots/diurnals/all_data",
+ggsave('no2_three_campaigns.svg',
+       path = "output/plots/leeds_meeting",
        width = 11,
        height = 13,
        units = 'cm')
@@ -246,8 +249,9 @@ diurnal = dat %>%
                                  date > "2023-02-26" ~ NA_real_,
                                  TRUE ~ NA_real_),
          hono_no_sahara = ifelse(campaign == "February 2023" & is.na(hono_sahara),hono,NA_real_)) %>%
-  filter(campaign == "February 2023") %>% 
-  timeVariation(pollutant = c("hono","no"))
+  rename(HONO = hono, NO = no) %>% 
+  filter(campaign == "August 2019") %>% 
+  timeVariation(pollutant = c("HONO","NO"))
 
 diurnal_dat = diurnal$data$hour
 
@@ -258,14 +262,14 @@ diurnal_dat %>%
   scale_color_manual(values = viridis(2)) +
   theme_bw() +
   labs(x = "Hour of day (UTC)",
-       y = "ppt",
+       y = "Mixing ratio (ppt)",
        color = NULL) +
   scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
-  # ylim(-1,12) +
+  ylim(-1,12) +
   theme(legend.position = "top")
 
-ggsave('hono_no_feb23.png',
-       path = "output/plots/diurnals/NAs_like_hono",
+ggsave('hono_no_aug19.svg',
+       path = "output/plots/leeds_meeting",
        width = 11,
        height = 13,
        units = 'cm')

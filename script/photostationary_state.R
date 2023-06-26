@@ -58,48 +58,43 @@ pss_calc = dat %>%
          h = lifetime * dv,
          kdep1 = 0.01/h,
          kdep3 = 0.03/h,
-         kdep_small = 0.0001/h,
-         kdep_large = 0.1/h,
          no_molecules = no * 2.46 * 10^19 * 10^-12,
-         pss1 = ((kp*oh*no_molecules + (jhno3 * nitrate * 57)) / (jhono + (kl*oh) + kdep1)) 
+         pss57 = ((kp*oh*no_molecules + (jhno3 * nitrate * 57)) / (jhono + (kl*oh) + kdep1)) 
          / (2.46 * 10^19 * 10^-12),
-         pss_small = ((kp*oh*no_molecules + (jhno3 * nitrate * 57)) / (jhono + (kl*oh) + kdep_small)) 
+         pss60 = ((kp*oh*no_molecules + (jhno3 * nitrate * 60)) / (jhono + (kl*oh) + kdep3))
          / (2.46 * 10^19 * 10^-12),
-         pss_large = ((kp*oh*no_molecules + (jhno3 * nitrate * 57)) / (jhono + (kl*oh) + kdep_large)) 
+         pss70_1 = ((kp*oh*no_molecules + (jhno3 * nitrate * 70)) / (jhono + (kl*oh) + kdep1))
          / (2.46 * 10^19 * 10^-12),
-         pss3 = ((kp*oh*no_molecules + (jhno3 * nitrate * 60)) / (jhono + (kl*oh) + kdep3))
+         pss70_3 = ((kp*oh*no_molecules + (jhno3 * nitrate * 70)) / (jhono + (kl*oh) + kdep3))
          / (2.46 * 10^19 * 10^-12),
-         simone1 = ((kp*oh*no_molecules + (jhno3 * nitrate * 70)) / (jhono + (kl*oh) + kdep1))
-         / (2.46 * 10^19 * 10^-12),
-         simone3 = ((kp*oh*no_molecules + (jhno3 * nitrate * 70)) / (jhono + (kl*oh) + kdep3))
-         / (2.46 * 10^19 * 10^-12),
-         # without_nitrate = ( kp*oh*no_molecules) / (jhono + (kl*oh) + kdep)
+         # without_nitrate = ( kp*oh*no_molecules) / (jhono + (kl*oh) + kdep1)
          # / (2.46 * 10^19 * 10^-12),
-         # without_enhancement = (kp*oh*no_molecules + (jhno3 * nitrate)) / (jhono + (kl*oh) + kdep) 
+         # without_enhancement = (kp*oh*no_molecules + (jhno3 * nitrate)) / (jhono + (kl*oh) + kdep1)
          # / (2.46 * 10^19 * 10^-12),
          )
 
 pss_calc %>% 
   filter(date > "2023-02-06" & date < "2023-02-27") %>%
-  rename("Measured HONO" = measured,"Dep velocity = 0.01" = pss1, "Dep velocity = 0.03" = pss3) %>%
-  pivot_longer(c("Measured HONO","Dep velocity = 0.03","Dep velocity = 0.01")) %>%
+  rename("Observed" = measured,"Dep velocity = 1" = pss57, "Dep velocity = 3" = pss60) %>%
+  pivot_longer(c("Observed","Dep velocity = 3","Dep velocity = 1")) %>%
+  # pivot_longer(c(measured,pss57,pss60,pss70_1,pss70_3)) %>% 
   ggplot(aes(date,value,col = name)) +
   # facet_grid(rows = vars(name)) +
   # facet_grid(rows = vars(factor(name,levels=c("missing_production","pss","f"))),
   #            scales = "free_y") +
   labs(x = "Date (UTC)",
-       y = "HONO / ppt",
+       y = "HONO (ppt)",
        col = NULL) +
-  # scale_color_viridis(discrete = "TRUE",option = "D") +
+  scale_color_manual(values = viridis(3)) +
   theme_bw() +
   theme(legend.position = "top") +
   scale_x_datetime(date_breaks = "1 day",date_labels = "%d/%m") +
-  geom_path(size = 0.75)
+  geom_path(size = 0.8)
 
 last_plot() + aes(group=rev(name)) #changes what colour is in front in the plot
 
-ggsave('f_seventy_dep_v.svg',
-       path = "output/plots/pss",
+ggsave('f_calc.svg',
+       path = "output/plots/leeds_meeting",
        width = 30,
        height = 12,
        units = 'cm')
@@ -109,8 +104,8 @@ ggsave('f_seventy_dep_v.svg',
 
 diurnal = pss_calc %>% 
   filter(is.na(measured) == FALSE) %>% 
-  rename("Measured HONO" = measured,"Dep velocity = 0.01" = pss1, "Dep velocity = 0.03" = pss3) %>% 
-  timeVariation(pollutant = c("Measured HONO","Dep velocity = 0.01","Dep velocity = 0.03"))
+  rename("Observed" = measured,"f = 57" = pss57,"f = 60" = pss60,"Dep velocity = 1" = pss70_1,"Dep velocity = 3" = pss70_3) %>%
+  timeVariation(pollutant = c("Observed","f = 57","f = 60","Dep velocity = 1","Dep velocity = 3"))
 
 diurnal_dat = diurnal$data$hour
 
@@ -118,18 +113,18 @@ diurnal_dat %>%
   ggplot(aes(hour,Mean,col = variable)) +
   geom_line(size = 1) +
   # facet_grid(cols = vars(variable),scales = "free_y") +
-  scale_color_manual(values = viridis(3)) +
+  scale_color_manual(values = viridis(5)) +
   theme_bw() +
   labs(x = "Hour of day (UTC)",
-       y = "HONO / ppt",
+       y = "HONO (ppt)",
        color = NULL) +
   scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
   # facet_grid(rows = vars(factor(variable,levels=c("measured","without_nitrate","without_enhancement"))),
   #            scales = "free_y") +
   theme(legend.position = "top")
 
-ggsave('diurnal_diff_dep_vel_f_calc.svg',
-       path = "output/plots/pss",
+ggsave('diurnals.svg',
+       path = "output/plots/leeds_meeting",
        width = 30,
        height = 12,
        units = 'cm')
@@ -159,6 +154,7 @@ f_calc = dat %>%
 missing_production = mean(f_calc$missing_production,na.rm = TRUE)
 jhno3 = mean(f_calc$jhno3,na.rm = TRUE)
 f = missing_production/(nitrate*jhno3)
+
 # Calculating median loss and production through various pathways ---------
 
 loss_production = dat %>% 
