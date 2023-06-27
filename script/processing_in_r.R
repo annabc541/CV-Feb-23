@@ -4,6 +4,7 @@ library(zoo)
 library(oce)
 library(openair)
 library(tayloRswift)
+library(viridis)
 
 #work in process trying to change how zeroes are done to apply night zeroes only after powercut
 #which messes up 19/02, so tried using normal zeroes on it, but then it is still messed up
@@ -14,8 +15,8 @@ Sys.setenv(TZ = "UTC")
 
 cal0.5_ch1 = 326.01
 cal0.5_ch2 = 344.74
-cal1_ch1 = 566.46 #also used for period without calibrations
-cal1_ch2 = 589.64 #also used for period without calibrations
+cal1_ch1 = 566.46
+cal1_ch2 = 589.64
 cal2_ch1 = 618.89
 cal2_ch2 = 643.18
 
@@ -109,6 +110,7 @@ final_dat1 = wip_dat1 %>%
          ch1_ppt = ch1_zeroed * cal1_ch1,
          ch2_ppt = ch2_zeroed * cal1_ch2,
          hono = ppt(ch1_ppt,ch2_ppt,se),
+         reagents = 1,
          flag = case_when(date < "2023-02-10 11:25" ~ 1,
                           between(date,as.POSIXct("2023-02-10 12:29"),as.POSIXct("2023-02-10 13:18")) ~ 2,
                           between(date,as.POSIXct("2023-02-10 18:23"),as.POSIXct("2023-02-10 19:04")) ~ 2,
@@ -143,7 +145,6 @@ final_dat1 = wip_dat1 %>%
                           between(date,as.POSIXct("2023-02-17 03:35"),as.POSIXct("2023-02-17 04:12")) ~ 2,
                           between(date,as.POSIXct("2023-02-17 09:03"),as.POSIXct("2023-02-17 15:55")) ~ 1,
                           TRUE ~ 0))
-
 
 # final_dat1 %>%
 #   # filter(flag == 0) %>%
@@ -181,9 +182,9 @@ wip_dat2 = raw_dat2 %>%
                              between(date,as.POSIXct("2023-02-18 00:29"),as.POSIXct("2023-02-18 00:39")) ~ 1,
                              between(date,as.POSIXct("2023-02-18 09:50"),as.POSIXct("2023-02-18 10:35")) ~ 1,
                              between(date,as.POSIXct("2023-02-18 16:41"),as.POSIXct("2023-02-18 16:52")) ~ 1,
-                             between(date,as.POSIXct("2023-02-19 17:02"),as.POSIXct("2023-02-19 17:13")) ~ 2, #lower than most, after power cut
-                             between(date,as.POSIXct("2023-02-20 11:39"),as.POSIXct("2023-02-20 11:47")) ~ 2,
-                             between(date,as.POSIXct("2023-02-20 17:55"),as.POSIXct("2023-02-20 18:04")) ~ 2,
+                             between(date,as.POSIXct("2023-02-19 17:02"),as.POSIXct("2023-02-19 17:13")) ~ 1, #lower than most, after power cut
+                             between(date,as.POSIXct("2023-02-20 11:39"),as.POSIXct("2023-02-20 11:47")) ~ 1, #after power cut
+                             between(date,as.POSIXct("2023-02-20 17:55"),as.POSIXct("2023-02-20 18:04")) ~ 1, #after power cut
                              TRUE ~ 0),
          #create columns with only zero values
          ch1_zeroes = ifelse(zeroing != 0, ch1,NA_real_),
@@ -194,7 +195,6 @@ wip_dat2 = raw_dat2 %>%
   #fill the values before first zero has been measured
   fill(ch1_zeroes,ch2_zeroes,.direction = "updown")
 
-
 final_dat2 = wip_dat2 %>% 
   mutate(date = date - date_corr2,
          ch1_zeroed = ch1 - ch1_zeroes,
@@ -202,6 +202,7 @@ final_dat2 = wip_dat2 %>%
          ch1_ppt = ch1_zeroed * cal2_ch1,
          ch2_ppt = ch2_zeroed * cal2_ch2,
          hono = ppt(ch1_ppt,ch2_ppt,se),
+         reagents = 2,
          flag = (case_when(between(date,as.POSIXct("2023-02-17 09:03"),as.POSIXct("2023-02-17 15:55")) ~ 1, #changing reagents
                            between(date,as.POSIXct("2023-02-17 15:55"),as.POSIXct("2023-02-17 18:12")) ~ 5, #zeroes and air in abs
                            between(date,as.POSIXct("2023-02-17 23:45"),as.POSIXct("2023-02-18 01:09")) ~ 2,
@@ -224,6 +225,23 @@ final_dat2 = wip_dat2 %>%
 night_zeroing = raw_dat2 %>%
   filter(date > "2023-02-21") %>% #data after power cut
   mutate(time = hour(date),
+         zeroing = case_when(between(date,as.POSIXct("2023-02-21 09:31"),as.POSIXct("2023-02-21 09:44")) ~ 1,
+                             between(date,as.POSIXct("2023-02-21 23:47:30"),as.POSIXct("2023-02-21 23:59")) ~ 1,
+                             between(date,as.POSIXct("2023-02-22 06:02"),as.POSIXct("2023-02-22 06:15")) ~ 1,
+                             between(date,as.POSIXct("2023-02-22 12:22"),as.POSIXct("2023-02-22 12:30:30")) ~ 1,
+                             between(date,as.POSIXct("2023-02-22 18:39"),as.POSIXct("2023-02-22 18:47")) ~ 1,
+                             between(date,as.POSIXct("2023-02-23 00:51"),as.POSIXct("2023-02-23 01:02")) ~ 1,
+                             between(date,as.POSIXct("2023-02-23 07:07"),as.POSIXct("2023-02-23 07:18")) ~ 1,
+                             between(date,as.POSIXct("2023-02-23 13:25"),as.POSIXct("2023-02-23 13:35")) ~ 1,
+                             between(date,as.POSIXct("2023-02-23 19:42"),as.POSIXct("2023-02-23 19:52")) ~ 1,
+                             between(date,as.POSIXct("2023-02-24 01:57"),as.POSIXct("2023-02-24 02:05")) ~ 1,
+                             between(date,as.POSIXct("2023-02-24 08:11"),as.POSIXct("2023-02-24 08:22")) ~ 1,
+                             between(date,as.POSIXct("2023-02-24 14:32"),as.POSIXct("2023-02-24 14:38")) ~ 1,
+                             between(date,as.POSIXct("2023-02-24 20:40"),as.POSIXct("2023-02-24 20:54")) ~ 1,
+                             between(date,as.POSIXct("2023-02-25 02:57"),as.POSIXct("2023-02-25 03:06")) ~ 1,
+                             between(date,as.POSIXct("2023-02-25 09:10"),as.POSIXct("2023-02-25 09:16")) ~ 1,
+                             between(date,as.POSIXct("2023-02-26 16:32"),as.POSIXct("2023-02-26 16:45")) ~ 1,
+                             TRUE ~ 0),
          date = date - date_corr2, #so that flagging is applied properly
          flag = (case_when(between(date,as.POSIXct("2023-02-20 22:27"),as.POSIXct("2023-02-21 07:54")) ~ 4,
                            between(date,as.POSIXct("2023-02-21 08:50"),as.POSIXct("2023-02-21 09:56")) ~ 2,
@@ -292,6 +310,7 @@ final_dat_night = night_zeroing %>%
          ch2_zeroed = ifelse(date < "2023-02-24 08:41",ch2 - ch2_zeroes,ch2 - 0.04323023),
          ch1_ppt = ch1_zeroed * cal2_ch1,
          ch2_ppt = ch2_zeroed * cal2_ch2,
+         reagents = 2.1,
          hono = ppt(ch1_ppt,ch2_ppt,se)) %>% 
   select(-c(id,idx))
 
@@ -353,6 +372,7 @@ final_dat3 = wip_dat3 %>%
          ch1_ppt = ch1_zeroed * cal0.5_ch1,
          ch2_ppt = ch2_zeroed * cal0.5_ch2,
          hono = ppt(ch1_ppt,ch2_ppt,se),
+         reagents = 0.5,
          flag = case_when(date < "2023-02-07 10:00" ~ 5,#not sure why, just looks weird,zero in there somewhere
                           between(date,as.POSIXct("2023-02-07 15:20"),as.POSIXct("2023-02-07 16:05")) ~ 2,
                           between(date,as.POSIXct("2023-02-07 21:20"),as.POSIXct("2023-02-07 22:25")) ~ 2,
@@ -398,6 +418,7 @@ despiked_dat = despiking %>%
          instrumental_noise_flag = ifelse(idx < 5, NA_real_, instrumental_noise_flag), #removes first x values of each group
          idx = n():1,
          instrumental_noise_flag = ifelse(idx < 7, NA_real_,instrumental_noise_flag)) #removes last x values of group 
+  
 
 despiked_dat %>% 
   # filter(date < "2023-02-07 18:00" & date > "2023-02-07 12:00") %>% 
@@ -407,27 +428,80 @@ despiked_dat %>%
   scale_x_datetime(date_breaks = "1 day",date_labels = "%d/%m") +
   geom_path()
 
+
+# Error analysis ----------------------------------------------------------
+
+dat1 = despiked_dat %>% 
+  ungroup() %>% 
+  mutate(hono = case_when(flag != 0 ~ NA_real_,
+                          instrumental_noise_flag != 0 ~ NA_real_,
+                          TRUE ~ hono),
+         flag = case_when(instrumental_noise_flag == 1 ~ 6, TRUE ~ flag)) %>%
+  select(date,ch1,ch2,zeroing,hono,reagents,flag)
+
+zero = rle(dat1$zeroing) %>%
+  tidy_rle() %>% 
+  filter(values == 1) %>% 
+  mutate(id = 1:nrow(.)) %>% 
+  as.list() %>% 
+  purrr::pmap_df(~data.frame(idx = ..3:..4,id = ..5)) %>% #df with row numbers and corresponding groups
+  tibble() 
+
+errors = dat1 %>% 
+  mutate(idx = 1:nrow(.)) %>% 
+  left_join(zero, "idx") %>% #joins two dfs by their row number
+  mutate(id = ifelse(is.na(id), 0, id)) %>%  #makes id (group) = 0 when not zeroing (24 zeroes)
+  filter(id != 0) %>% 
+  group_by(id) %>% 
+  summarise(sd1 = sd(ch1),
+            sd2 = sd(ch2),
+            idx = median(idx),
+            idx = round(idx))
+
+dat_errors = dat1 %>% 
+  mutate(idx = 1:nrow(.)) %>% 
+  left_join(errors, "idx") %>% 
+  mutate(sd1 = case_when(reagents == 0.5 ~ 2* sd1 * cal0.5_ch1,
+                         reagents == 1 ~ 2* sd1 * cal1_ch1,
+                         reagents >= 2 ~ 2* sd1 * cal2_ch1),
+         sd2 = case_when(reagents == 0.5 ~ 2* sd2 * cal0.5_ch1,
+                         reagents == 1 ~ 2* sd2 * cal1_ch1,
+                         reagents >= 2 ~ 2* sd2 * cal2_ch1),
+         lod = (sd1^2 + sd2^2)^0.5,
+         lod = na.approx(lod,na.rm = F),
+         error = hono*0.1+lod) %>% 
+  fill(lod,.direction = "updown")
+
+dat_errors %>% 
+  filter(reagents == 1) %>%
+  pivot_longer(c(lod,error,hono)) %>% 
+  mutate(reagents = as.character(reagents)) %>% 
+  ggplot(aes(date,value,col = reagents)) +
+  facet_grid(rows = vars(name),scales = "free_y") +
+  geom_path() +
+  scale_color_viridis(discrete = "TRUE")
+
 # Saving fully processed data ---------------------------------------------
 
 #flag = 6 when there's a spike due to instrumental noise
 #flag = 7 to indicate data is low quality - due to no proper zeroes available
-processed_dat = despiked_dat %>% 
+processed_dat = dat_errors %>% 
   ungroup() %>% 
-  mutate(flag = case_when(instrumental_noise_flag == 1 ~ 6, TRUE ~ flag),
-         low_quality_flag = case_when(between(date,as.POSIXct("2023-02-19"),as.POSIXct("2023-02-21")) ~ 1, #not properly zeroed
+  mutate(low_quality_flag = case_when(between(date,as.POSIXct("2023-02-19"),as.POSIXct("2023-02-21")) ~ 1, #not properly zeroed
                                       date > "2023-02-24 08:41" ~ 1, #not properly zeroed
                                       date < "2023-02-09 12:00" ~ 1, #not properly calibrated
                                       TRUE ~ 0),
          date = date + 3600) %>% #data in UTC
-  mutate(hono = ifelse(flag == 0,hono,NA_real_)) %>% 
-  timeAverage("5 min") %>%
-  select(date,hono,low_quality_flag) %>% 
+  # timeAverage("5 min") %>%
+  select(date,hono,error,low_quality_flag) %>% 
   mutate(low_quality_flag = ifelse(low_quality_flag == 0, low_quality_flag,1))
 
 processed_dat %>%
   timeAverage("5 min") %>% 
-  ggplot(aes(date,hono,col = low_quality_flag)) +
-  geom_path()
+  pivot_longer(c(hono,error)) %>% 
+  ggplot(aes(date,value,col = low_quality_flag)) +
+  geom_path() +
+  facet_grid(rows = vars(name))
 
 ggsave('processing_all_cal2.png',
        path = "output/plots",
