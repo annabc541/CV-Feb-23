@@ -13,15 +13,23 @@ nitrate_dat = read.csv("data/nitrate_ammonium_CVAO_12-19.csv") %>%
 nitrate_dat %>% 
   group_by(month) %>% 
   summarise(nitrate = mean(nitrate,na.rm = TRUE),
-            ammonium = mean(ammonium,na.rm = TRUE)) %>% 
+            ammonium = mean(ammonium,na.rm = TRUE),
+            sahara = mean(sahara,na.rm = TRUE)) %>% 
   ungroup() %>% 
-  ggplot(aes(month,ammonium,fill = month)) +
+  ggplot(aes(month,ammonium,fill = sahara)) +
   scale_fill_viridis() +
-  geom_bar(stat = "identity")
+  geom_col(stat = "identity")
 
 dat = left_join(air_mass,nitrate_dat)
 
-dat1 = dat %>% 
-  filter(date > "2012-01-09")
+dat %>% 
+  group_by(month) %>% 
+  summarise(nitrate = median(nitrate,na.rm = TRUE),
+            ammonium = median(ammonium,na.rm = TRUE),
+            sahara = median(sahara,na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  ggplot(aes(month,ammonium,fill = sahara)) +
+  scale_fill_viridis() +
+  geom_col(stat = "identity")
 
 

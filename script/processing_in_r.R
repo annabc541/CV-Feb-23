@@ -473,12 +473,15 @@ dat_errors = dat1 %>%
   fill(lod,.direction = "updown")
 
 dat_errors %>% 
-  filter(reagents == 1) %>%
-  pivot_longer(c(lod,error,hono)) %>% 
-  mutate(reagents = as.character(reagents)) %>% 
-  ggplot(aes(date,value,col = reagents)) +
-  facet_grid(rows = vars(name),scales = "free_y") +
+  # filter(reagents == 1) %>%
+  # pivot_longer(c(lod,error,hono)) %>% 
+  # timeAverage("1 hour") %>% 
+  # mutate(reagents = as.character(reagents)) %>%
+  filter(reagents == 0.5) %>% 
+  ggplot(aes(date,hono)) +
+  # facet_grid(rows = vars(name),scales = "free_y") +
   geom_path() +
+  geom_ribbon(aes(ymin = hono - error,ymax = hono + error),alpha = 0.1)
   scale_color_viridis(discrete = "TRUE")
 
 # Saving fully processed data ---------------------------------------------
