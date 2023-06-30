@@ -90,6 +90,86 @@ ggsave('diurnals.svg',
        units = 'cm')
 
 
+# Diurnals 15 min average -------------------------------------------------
+
+#importing all the data individually and then creating one dataframe - data is averaged to 15 minutes
+#interpolation for spec rad data as it is hourly
+
+spec_rad = read.csv("data/Specrad_hour_23_with_calc.csv") %>% 
+  mutate(date = dmy_hm(date),
+         hour = hour(date)) %>% 
+  clean_names() %>% 
+  mutate(jhono = ifelse(is.na(j_hono),jhono_calc,j_hono),
+         jhno3 = ifelse(is.na(j_hno3),jhno3_calc,j_hno3)) %>% 
+  select(date,hour,jhono,jhno3)
+
+#to remove NAs in jhono and jhno3 values
+
+#find average jhono and jhno3 values for each hour
+spec_rad_mean = spec_rad %>% 
+  group_by(hour) %>% 
+  summarise(jhono_avg = mean(jhono,na.rm = T),
+            jhno3_avg = mean(jhno3,na.rm = T))
+
+#replace NAs with average value for that hour
+spec_rad_full = left_join(spec_rad,spec_rad_mean,by = "hour") %>% 
+  mutate(jhono = ifelse(is.na(jhono),jhono_avg,jhono),
+         jhno3 = ifelse(is.na(jhno3),jhno3_avg,jhno3)) %>% 
+  select(-c(jhono_avg,jhno3_avg)) %>% 
+  timeAverage("15 min") %>% 
+  mutate(jhono = na.approx(jhono,na.rm = FALSE),
+         jhno3 = na.approx(jhno3,na.rm = FALSE))
+
+oh_dat = read.csv("data/OH_provisional.csv") %>% 
+  clean_names() %>% 
+  mutate(date = dmy_hm(time),
+         oh = na.approx(oh_molecules_cm_3,na.rm = F)) %>% #interpolate missing values
+  select(date,oh) %>% 
+  timeAverage("15 min")
+
+nox_dat = read.csv("data/nox_data/nox23.csv") %>% 
+  mutate(date = ymd_hms(X)) %>% 
+  filter(date > "2023-02-01" & date < "2023-03-01") %>% 
+  select(date,no = NO_Conc_art_corrected) %>%  
+  timeAverage("15 min")
+
+hono_dat = read.csv("output/data/processed_in_r2.csv") %>% 
+  mutate(date = dmy_hms(date)) %>% 
+  select(date,hono) %>% 
+  timeAverage("15 min")
+
+df_list = list(nox_dat,oh_dat,hono_dat,spec_rad_full)
+
+
+dat = df_list %>% reduce(full_join,by = "date") %>% arrange(date) %>% 
+  filter(date > "2023-02-07 08:35",
+         date < "2023-02-28")
+
+pss_calc = dat %>% 
+  mutate(hour = hour(date),
+         lifetime = ifelse(hour >= 11 & hour <= 15,1/jhono,NA_real_),
+         lifetime = na.approx(lifetime,na.rm = FALSE),
+         h = lifetime * dv,
+         kdep1 = 0.01/h,
+         no_molecules = no * 2.46 * 10^19 * 10^-12,
+         pss = ((kp*oh*no_molecules + (jhno3 * nitrate * 58)) / (jhono + (kl*oh) + kdep1))
+                         / (2.46 * 10^19 * 10^-12))
+
+diurnal = pss_calc %>% 
+  filter(is.na(hono) == FALSE) %>% 
+  mutate(hour = hour(date),
+         minute = minute(date),
+         hour = hour + (minute/60)) %>% 
+  group_by(hour) %>% 
+  summarise(hono = mean(hono,na.rm = TRUE),
+            pss = mean(pss,na.rm = TRUE)) %>% 
+  ungroup()
+
+diurnal %>% 
+  pivot_longer(c(hono,pss)) %>% 
+  ggplot(aes(hour,value,col = name)) +
+  geom_path()
+
 # Calculating enhancement factor ------------------------------------------
 
 #can change anything in code below to find f for different parameters
@@ -108,7 +188,6 @@ f_calc = pss_calc %>%
   mutate(lifetime = 1/jhono,
          h = lifetime * dv,
          kdep = 0.01/h, #change as needed
-         no_molecules = no * 2.46 * 10^19 * 10^-12,
          production_without_nitrate = kp*oh*no_molecules,
          loss = jhono + (kl*oh) + kdep,
          loss_hono = loss * hono * 2.46 * 10^19 * 10^-12,
@@ -120,6 +199,66 @@ missing_production20 = mean(f_calc$missing_production,na.rm = TRUE)
 jhno3_20= mean(f_calc$jhno3,na.rm = TRUE)
 nitrate_20 = mean(f_calc$nitrate,na.rm = TRUE)
 f_feb20 = missing_production20/(nitrate_20*jhno3_20)
+
+
+
+# Production and loss mechanisms ------------------------------------------
+
+#diurnal cycle were we see how much each reaction contributes to HONO production and loss
+#and we can see if the production and loss mechanisms balance out
+#remember to change the value of f depending on campaign we are looking at
+
+prod_loss = pss_calc %>% 
+  mutate(oh = oh / (2.46 * 10^19 * 10^-12), #convert to ppt
+         nitrate = nitrate / (2.46 * 10^19 * 10^-12), #convert to ppt
+         hono_photolysis = jhono * hono,
+         hono_oh = kl * hono * oh,
+         hono_deposition = kdep1 * hono,
+         pno3_photolysis = jhno3 * 20 * nitrate,
+         no_oh = kp * no * oh,
+         loss = hono_photolysis + hono_deposition + hono_oh,
+         production = pno3_photolysis + no_oh)
+
+prod_loss %>% 
+  filter(campaign == "August 2019") %>%
+  # pivot_longer(c(pno3_photolysis,no_oh)) %>%
+  ggplot(aes(date,pno3_photolysis,col = nitrate)) +
+  geom_path(size = 0.8) +
+  # scale_x_datetime(breaks = "1 day",date_labels = "%d/%m")
+  scale_color_viridis() +
+  # facet_grid(rows = vars(name),scales = "free") +
+  # facet_wrap(vars(campaign),scales = "free", ncol =1) +
+  NULL
+
+ggsave('production19_nitrate.svg',
+       path = "output/plots/pss/production_loss",
+       width = 30,
+       height = 12,
+       units = 'cm')
+
+diurnal_prod_loss = prod_loss %>% 
+  filter(campaign == "August 2019",
+         is.na(hono) == FALSE) %>% 
+  timeVariation(pollutant = c("production","loss"))
+
+diurnal_dat_prod_loss = diurnal_prod_loss$data$hour
+
+diurnal_dat_prod_loss %>% 
+  ggplot(aes(hour,Mean,col = variable)) +
+  geom_line(size = 1) +
+  scale_color_manual(values = viridis(3)) +
+  theme_bw() +
+  labs(x = "Hour of day (UTC)",
+       y = "HONO (ppt)",
+       color = NULL) +
+  scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
+  theme(legend.position = "top")
+
+ggsave('production_loss19.svg',
+       path = "output/plots/pss/production_loss",
+       width = 30,
+       height = 12,
+       units = 'cm')
 
 # Not in use atm ----------------------------------------------------------
 
@@ -273,7 +412,8 @@ nitrate_dat = read.csv("data/nitrate_ammonium_CVAO_12-19.csv") %>%
   clean_names() %>%
   mutate(date = mdy_hm(start_local_time),
          month = month(date),
-         year = year(date)) %>% 
+         year = year(date),
+         date = round_date(date, "1 hour")) %>% 
   select(date,nitrate = nitrate_mg_m) %>% 
   timeAverage("1 hour")
 
@@ -286,18 +426,23 @@ oh_dat = read.csv("data/OH_provisional.csv") %>%
   timeAverage("1 hour")
 
 df_list = list(hono_dat,nox_dat,spec_rad_full,nitrate_dat,oh_dat)
+  
 
 dat = df_list %>% reduce(full_join,by = "date") %>% 
+  arrange(date) %>% 
   filter(date < "2023-02-28",
-         date > "2019-08-14") %>%
+         date > "2019-08-15 11:00") %>% 
   mutate(campaign = case_when (date <= "2019-08-29 00:55" ~ "August 2019",
                                between(date,as.POSIXct("2020-02-14 01:00"),as.POSIXct("2020-02-27 00:55")) ~ "February 2020",
                                date >= "2023-02-07 08:35" ~ "February 2023",
                                TRUE ~ "no campaign"),
          oh = ifelse(campaign != "February 2023",2 * 10^6,oh), #molecules cm-3
-         nitrate = ifelse(campaign == "August 2019",
-                          (nitrate* 10^-12 *6.022 * 10^23)/62.004,
-                          1.20 * 10^10)) %>%  #molecules cm-3
+         nitrate = case_when(campaign == "February 2020" ~ 1.20 * 10^10,
+                             campaign == "February 2023" ~ 1.20 * 10^10,
+                             TRUE ~ (nitrate* 10^-12 *6.022 * 10^23)/62.004),#molecules cm-3
+         # nitrate = ifelse(campaign == "February 2020" | campaign == "February 2023",1.20 * 10^10,
+         #                  (nitrate* 10^-12 *6.022 * 10^23)/62.004),
+         nitrate = na.approx(nitrate,na.rm = FALSE)) %>%  
   select(-hour)
 
 write.csv(dat,"output/data/all_data.csv",row.names = FALSE) #saving as .csv
