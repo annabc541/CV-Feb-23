@@ -10,6 +10,7 @@ library(viridis)
 kp = 3.3 * 10^-11 #rate constant for oh + no -> hono (from Atkinson et al. 2004)
 kl = 6 * 10^-12 #rate constant for oh + hono -> h2o + no2 (from Atkinson et al. 2004)
 dv = 0.3 #deardfroff velocity, value used by Simone
+nitrate = 1.20 * 10^10 #constant value until more recent measurements are received from TROPOS
 
 #calculated daytime enhancement factor (if I calculated it correctly) is either 60 (dep velocity = 0.03)
 #or 58 (dep velocity = 0.01) for February 2023 campaign
@@ -44,18 +45,19 @@ pss_calc = dat %>%
                          / (2.46 * 10^19 * 10^-12)))
 
 pss_calc %>% 
-  filter(campaign != "no campaign") %>% 
+  filter(campaign == "August 2019",
+         date < "2019-08-24") %>% 
   pivot_longer(c(pss,hono)) %>%
-  ggplot(aes(date,value,col = name)) +
+  ggplot(aes(date,value,col = nitrate)) +
   geom_path(size = 0.8) +
   # scale_x_datetime(breaks = "1 day",date_labels = "%d/%m")
-  # scale_color_viridis() +
-  # facet_grid(rows = vars(name)) +
-  facet_wrap(vars(campaign),scales = "free", ncol =1) +
+  scale_color_viridis() +
+  facet_grid(rows = vars(name)) +
+  # facet_wrap(vars(campaign),scales = "free", ncol =1) +
   NULL
 
-ggsave('f_calc.svg',
-       path = "output/plots/leeds_meeting",
+ggsave('pss20_nitrate_col.svg',
+       path = "output/plots/pss/august19",
        width = 30,
        height = 12,
        units = 'cm')
@@ -65,9 +67,10 @@ ggsave('f_calc.svg',
 
 #can change what campaign we are seeing the diurnals for
 diurnal = pss_calc %>% 
-  filter(campaign == "August 2019",
+  filter(campaign == "February 2023",
          is.na(hono) == FALSE) %>% 
-  timeVariation(pollutant = c("hono","pss"))
+  rename(HONO = hono,PSS = pss) %>% 
+  timeVariation(pollutant = c("HONO","PSS"))
 
 diurnal_dat = diurnal$data$hour
 
@@ -83,10 +86,10 @@ diurnal_dat %>%
   ylim(-1.5,12) + #in order to have same sized axes for diurnals for all three campaigns
   theme(legend.position = "top")
 
-ggsave('diurnals.svg',
-       path = "output/plots/leeds_meeting",
-       width = 30,
-       height = 12,
+ggsave('hourly_diurnal_hono_pss.svg',
+       path = "output/plots/red_shift",
+       width = 11,
+       height = 13,
        units = 'cm')
 
 
@@ -143,7 +146,8 @@ df_list = list(nox_dat,oh_dat,hono_dat,spec_rad_full)
 
 dat = df_list %>% reduce(full_join,by = "date") %>% arrange(date) %>% 
   filter(date > "2023-02-07 08:35",
-         date < "2023-02-28")
+         date < "2023-02-28") %>% 
+  mutate(hour = hour(date))
 
 pss_calc = dat %>% 
   mutate(hour = hour(date),
@@ -157,8 +161,7 @@ pss_calc = dat %>%
 
 diurnal = pss_calc %>% 
   filter(is.na(hono) == FALSE) %>% 
-  mutate(hour = hour(date),
-         minute = minute(date),
+  mutate(minute = minute(date),
          hour = hour + (minute/60)) %>% 
   group_by(hour) %>% 
   summarise(hono = mean(hono,na.rm = TRUE),
@@ -166,9 +169,24 @@ diurnal = pss_calc %>%
   ungroup()
 
 diurnal %>% 
-  pivot_longer(c(hono,pss)) %>% 
+  rename(HONO = hono,PSS = pss) %>% 
+  pivot_longer(c(HONO,PSS)) %>% 
   ggplot(aes(hour,value,col = name)) +
-  geom_path()
+  geom_line(size = 1) +
+  scale_color_manual(values = viridis(2)) +
+  theme_bw() +
+  labs(x = "Hour of day (UTC)",
+       y = "HONO (ppt)",
+       color = NULL) +
+  scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
+  ylim(-1.5,12) + #in order to have same sized axes for diurnals for all three campaigns
+  theme(legend.position = "top")
+
+ggsave('15min_diurnal_hono_pss.svg',
+       path = "output/plots/red_shift",
+       width = 11,
+       height = 13,
+       units = 'cm')
 
 # Calculating enhancement factor ------------------------------------------
 

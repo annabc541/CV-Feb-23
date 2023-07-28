@@ -5,6 +5,8 @@ library(janitor)
 library(viridis)
 library(zoo)
 
+#for comparing the different photolysis rate constants to each other
+
 # Functions ---------------------------------------------------------------
 
 min_max_norm <- function(x) {
@@ -67,7 +69,7 @@ test %>%
 NULL
 
 diurnal = test %>% 
-  timeVariation(pollutant = c("jhno3","jo1d","jhono","jh2o2","jo3p","jno2"))
+  timeVariation(pollutant = c("jhno3","jhono","jno2"))
 
 diurnal_dat = diurnal$data$hour
 
@@ -76,68 +78,15 @@ diurnal_dat %>%
   geom_line(size = 1) +
   scale_color_viridis_d() +
   theme_bw() +
+  labs(x = "Hour of day (UTC)",
+       y = "Normalised j",
+       color = NULL) +
   scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
   # facet_grid(rows = vars(variable),scales = "free_y") +
   theme(legend.position = "top")
 
-ggsave('normalised_photolysis_rates.svg',
+ggsave('normalised_photolysis_rates_limited.svg',
        path = "output/plots/red_shift",
        width = 30,
        height = 12,
        units = 'cm')
-
-# PSS ------------------------------------------------------------
-
-kp = 3.3 * 10^-11
-kl = 6 * 10^-12
-dv = 0.3
-
-dat = read.csv("output/data/all_data.csv") %>% 
-  mutate(date = ymd_hms(date)) %>% 
-  filter(campaign == "February 2023") %>% 
-  timeAverage("1 hour") %>% 
-  select(-c(jhono,jhno3))
-
-# Normalising measured HONO for direct comparison -------------------------
-
-hono_comp = left_join(dat,test,by = "date") %>% 
-  mutate(hono_norm = min_max_norm(hono))
-
-diurnal = hono_comp %>% 
-  timeVariation(pollutant = c("jhno3","jo1d","jhono","jh2o2","jo3p","jno2","hono_norm"))
-
-diurnal_dat = diurnal$data$hour
-
-diurnal_dat %>% 
-  ggplot(aes(hour,Mean,col = variable)) +
-  geom_line(size = 1) +
-  scale_color_viridis_d() +
-  theme_bw() +
-  scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
-  # facet_grid(rows = vars(variable),scales = "free_y") +
-  theme(legend.position = "top")
-
-
-# Getting all normalised constants on the same scale as hono --------------
-
-hono_comp = left_join(dat,test,by = "date") %>% 
-  mutate(jhono = jhono * max(hono,na.rm = TRUE),
-         jno2 = jno2 * max(hono,na.rm = TRUE),
-         jhno3 = jhno3 * max(hono,na.rm = TRUE),
-         jo1d = jo1d * max(hono,na.rm = TRUE),
-         jo3p = jo3p * max(hono,na.rm = TRUE),
-         jh2o2 = jh2o2 * max(hono,na.rm = TRUE))
-
-diurnal = hono_comp %>% 
-  timeVariation(pollutant = c("jhno3","jo1d","jhono","jh2o2","jo3p","jno2","hono"))
-
-diurnal_dat = diurnal$data$hour
-
-diurnal_dat %>% 
-  ggplot(aes(hour,Mean,col = variable)) +
-  geom_line(size = 1) +
-  scale_color_viridis_d() +
-  theme_bw() +
-  scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
-  # facet_grid(rows = vars(variable),scales = "free_y") +
-  theme(legend.position = "top")

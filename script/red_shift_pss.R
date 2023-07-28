@@ -5,10 +5,12 @@ library(janitor)
 library(viridis)
 library(zoo)
 
+#for using the normalised jno2 photolysis rate constant to calculate HONO PSS
+
 # Functions ---------------------------------------------------------------
 
 min_max_norm <- function(x) {
-  (x - min(x)) / (max(x) - min(x))
+  (x - min(x,na.rm = TRUE)) / (max(x,na.rm = TRUE) - min(x,na.rm = TRUE))
 }
 
 # Sorting spec rad --------------------------------------------------------
@@ -34,8 +36,8 @@ spec_rad_full = left_join(spec_rad,spec_rad_mean,by = "hour") %>%
          jhno3 = ifelse(is.na(jhno3),jhno3_avg,jhno3),
          jno2 = ifelse(is.na(jno2),jno2_avg,jno2),
          jo1d = ifelse(is.na(jo1d),jo1d_avg,jo1d),
-         jo1d_norm = min_max_norm(jo1d),
-         jo1d_norm = jo1d_norm * max(jhno3)) %>% 
+         jno2_norm = min_max_norm(jno2),
+         jno2_norm = jno2_norm * max(jhno3)) %>% 
   select(-c(jhono_avg,jhno3_avg,jno2_avg,jo1d_avg))
 
 spec_rad_full %>% 
@@ -73,20 +75,35 @@ pss_calc = left_join(dat,spec_rad_full,by = "date") %>%
          kdep1 = 0.01/h,
          no_molecules = no * 2.46 * 10^19 * 10^-12,
          pss = (kp*oh*no_molecules + (jhno3 * nitrate * 58)) / (jhono + (kl*oh) + kdep1) / (2.46 * 10^19 * 10^-12),
-         pss_red = (kp*oh*no_molecules + (jo1d_norm * nitrate * 58)) / (jhono + (kl*oh) + kdep1) / (2.46 * 10^19 * 10^-12))
+         pss_red = (kp*oh*no_molecules + (jno2_norm * nitrate * 58)) / (jhono + (kl*oh) + kdep1) / (2.46 * 10^19 * 10^-12))
 
 
 pss_calc %>% 
-  pivot_longer(c(hono,pss,pss_red)) %>% 
+  rename(HONO = hono,PSS = pss,PSS_jno2 = pss_red) %>% 
+  pivot_longer(c(HONO,PSS,PSS_jno2)) %>% 
   ggplot(aes(date,value,col = name)) +
-  geom_path() +
-  scale_color_viridis_d()
+  geom_path(size = 0.8) +
+  scale_color_viridis_d() +
+  # facet_grid(rows = vars(name),scale = "free_y") +
+  theme_bw() +
+  labs(x = "Datetime (UTC)",
+       y = "HONO (ppt)",
+       color = NULL) +
+  theme(legend.position = "top") +
+  NULL
+
+ggsave('pss_jno2_timeseries.svg',
+       path = "output/plots/red_shift",
+       width = 30,
+       height = 12,
+       units = 'cm')
 
 # Checking diurnals -------------------------------------------------------
 
 diurnal = pss_calc %>% 
   filter(is.na(hono) == FALSE) %>% 
-  timeVariation(pollutant = c("hono","pss","pss_red"))
+  rename(HONO = hono,PSS = pss,PSS_jno2 = pss_red) %>% 
+  timeVariation(pollutant = c("HONO","PSS","PSS_jno2"))
 
 diurnal_dat = diurnal$data$hour
 
@@ -101,3 +118,9 @@ diurnal_dat %>%
   scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
   # facet_grid(rows = vars(variable),scales = "free_y") +
   theme(legend.position = "top")
+
+ggsave('diurnal_red_shifted_pss.svg',
+       path = "output/plots/red_shift",
+       width = 30,
+       height = 12,
+       units = 'cm')
