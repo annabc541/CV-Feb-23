@@ -124,3 +124,74 @@ ggsave('diurnal_red_shifted_pss.svg',
        width = 30,
        height = 12,
        units = 'cm')
+
+
+# Checking diurnal shape of individual elements ---------------------------
+
+#very preliminary, just want to see what the shape is so normalising everything
+#this will just be qualitative, not quantitative
+
+normalised = pss_calc %>% 
+  mutate(jhno3_norm = min_max_norm(jhno3) * max(hono,na.rm = TRUE),
+         jhono_norm = min_max_norm(jhono) * max(hono,na.rm = TRUE),
+         no_norm = min_max_norm(no) * max(hono,na.rm = TRUE),
+         kdep1_norm = min_max_norm(kdep1) * max(hono,na.rm = TRUE),
+         oh_norm = min_max_norm(oh) * max(hono,na.rm = TRUE))
+
+normalised_diurnal = normalised %>% 
+  filter(is.na(hono) == FALSE) %>% 
+  timeVariation(pollutant = c("hono","pss","oh_norm"))
+
+normalised_diurnal_dat = normalised_diurnal$data$hour
+
+normalised_diurnal_dat %>% 
+  ggplot(aes(hour,Mean,col = variable)) +
+  geom_line(size = 1) +
+  scale_color_viridis_d() +
+  theme_bw() +
+  labs(x = "Hour of day (UTC)",
+       y = "HONO (ppt)",
+       color = NULL) +
+  scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
+  # facet_grid(rows = vars(variable),scales = "free_y") +
+  theme(legend.position = "top")
+
+
+#looking at production and loss mechanisms
+
+prod_loss = pss_calc %>% 
+  mutate(oh = oh / (2.46 * 10^19 * 10^-12), #convert to ppt
+         nitrate = nitrate / (2.46 * 10^19 * 10^-12), #convert to ppt
+         hono_photolysis = jhono * hono,
+         hono_oh = kl * hono * oh,
+         hono_deposition = kdep1 * hono,
+         pno3_photolysis = jhno3 * 20 * nitrate,
+         no_oh = kp * no * oh,
+         loss = hono_photolysis + hono_deposition + hono_oh,
+         production = pno3_photolysis + no_oh)
+
+
+normalised_pl = prod_loss %>% 
+  mutate(hono_photolysis = min_max_norm(hono_photolysis) * max(hono,na.rm = TRUE),
+         hono_oh = min_max_norm(hono_oh) * max(hono,na.rm = TRUE),
+         hono_deposition = min_max_norm(hono_deposition) * max(hono,na.rm = TRUE),
+         pno3_photolysis = min_max_norm(pno3_photolysis) * max(hono,na.rm = TRUE),
+         no_oh = min_max_norm(no_oh) * max(hono,na.rm = TRUE))
+
+normalised_diurnal_pl = normalised_pl %>% 
+  filter(is.na(hono) == FALSE) %>% 
+  timeVariation(pollutant = c("hono","pss","no_oh"))
+
+normalised_diurnal_dat = normalised_diurnal_pl$data$hour
+
+normalised_diurnal_dat %>% 
+  ggplot(aes(hour,Mean,col = variable)) +
+  geom_line(size = 1) +
+  scale_color_viridis_d() +
+  theme_bw() +
+  labs(x = "Hour of day (UTC)",
+       y = "HONO (ppt)",
+       color = NULL) +
+  scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
+  # facet_grid(rows = vars(variable),scales = "free_y") +
+  theme(legend.position = "top")

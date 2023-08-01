@@ -36,7 +36,8 @@ hono = bind_rows(datList) %>%
   mutate(date = dmy_hms(start.gmt)) %>% 
   select(date,hono = hono.ppt)
 
-hono23 = read.csv("output/data/processed_in_r2.csv") %>% 
+#check that this data has seconds in it and is read in properly
+hono23 = read.csv("output/data/processed_in_r3.csv") %>% 
   mutate(date = ymd_hms(date))
 
 hono_dat = bind_rows(hono,hono23)
@@ -51,6 +52,7 @@ air_mass = read.csv("data/new_CVAO_sector_%_boxes_1.csv") %>%
 df_list = list(hono_dat,nox_dat,air_mass)
 
 dat = df_list %>% reduce(left_join,by = "date") %>% 
+  arrange(date) %>% 
   mutate(campaign = case_when (date <= "2019-08-29 00:55" ~ "August 2019",
                                between(date,as.POSIXct("2020-02-14 01:00"),as.POSIXct("2020-02-27 00:55")) ~ "February 2020",
                                date >= "2023-02-07 08:35" ~ "February 2023",
@@ -202,6 +204,7 @@ ggsave('hono_across_the_years.svg',
 
 #all hono data in one plot, colour coded by campaign
 diurnals = dat %>% 
+  filter(campaign != "no campaign") %>% 
   mutate(no = case_when(is.na(hono) ~ NA_real_,
                         campaign == "August 2019" & date > "2019-08-24" ~ NA_real_,
                         TRUE ~ no),
@@ -209,7 +212,7 @@ diurnals = dat %>%
                          campaign == "August 2019" & date > "2019-08-24" ~ NA_real_,
                          TRUE ~ no2),
          hono = ifelse(campaign == "August 2019" & date > "2019-08-24",NA_real_,hono)) %>% 
-  pivot_wider(names_from = campaign,values_from = no2)
+  pivot_wider(names_from = campaign,values_from = hono)
 
 diurnal = diurnals %>% 
   timeVariation(pollutant = c("August 2019","February 2020","February 2023"))
@@ -248,10 +251,12 @@ diurnal = dat %>%
                                  campaign == "February 2023" & date <= "2023-02-09"~ hono,
                                  date > "2023-02-26" ~ NA_real_,
                                  TRUE ~ NA_real_),
-         hono_no_sahara = ifelse(campaign == "February 2023" & is.na(hono_sahara),hono,NA_real_)) %>%
-  rename(HONO = hono, NO = no) %>% 
-  filter(campaign == "August 2019") %>% 
-  timeVariation(pollutant = c("HONO","NO"))
+         hono_no_sahara = ifelse(campaign == "February 2023" & is.na(hono_sahara),hono,NA_real_),
+         nox = no + no2) %>%
+  rename(HONO = hono,NO = no,NOx = nox) %>% 
+  filter(campaign == "February 2023",
+         no2 < 50) %>% 
+  timeVariation(pollutant = c("HONO","NOx"))
 
 diurnal_dat = diurnal$data$hour
 
