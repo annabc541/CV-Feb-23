@@ -7,6 +7,8 @@ library(viridis)
 
 Sys.setenv(TZ = 'UTC')
 
+#most recent change: filtered out HONO on 16/02/20 because it looked very suspicious
+
 # Universal dataframes ----------------------------------------------------
 
 nitrate_dat = read.csv("data/nitrate_ammonium_CVAO_12-19.csv") %>% 
@@ -113,7 +115,10 @@ ggsave('hono_nox_sahara_aug19_all.svg',
 #five-minute average
 hono20 = read.csv("data/roberto_data/lopap_feb2020.csv") %>% 
   mutate(date = dmy_hms(start.gmt)) %>% 
-  select(date,hono = hono.ppt)
+  select(date,hono = hono.ppt) %>% 
+  mutate(sus_flag = case_when(date > "2020-02-16 07:30" & date < "2020-02-16 12:00" ~ 1,
+                              TRUE ~ 0),
+         hono = ifelse(sus_flag == 1,NA_real_,hono))
 
 nox20 = read.csv("data/nox_data/nox20.csv") %>% 
   mutate(date = ymd_hms(X)) %>% 
@@ -234,7 +239,7 @@ ggsave('hono_across_the_years_sahara.svg',
 diurnals = dat %>% 
   filter(campaign != "no campaign",
          is.na(hono) == FALSE) %>% 
-  pivot_wider(names_from = campaign,values_from = no2)
+  pivot_wider(names_from = campaign,values_from = hono)
 
 diurnal = diurnals %>% 
   rename("Nov 2015"="November 2015","Aug 2019"="August 2019","Feb 2020"="February 2020","Feb 2023"="February 2023") %>% 
@@ -255,7 +260,7 @@ diurnal_dat %>%
   # ylim(-0.5,12) +
   theme(legend.position = "top")
 
-ggsave('no2_all_campaigns.svg',
+ggsave('hono_all_campaigns.svg',
        path = "output/plots/diurnals",
        width = 11,
        height = 13,
@@ -268,7 +273,7 @@ diurnal_campaigns = dat %>%
   mutate(NOx = no + no2) %>%
   rename(HONO = hono,NO = no,'NO[2]' = no2) %>% 
   filter(is.na(HONO) == FALSE,
-         campaign == "February 2023") %>% 
+         campaign == "November 2015") %>% 
   timeVariation(pollutant = c("HONO","NOx"))
 
 diurnal_campaigns_dat = diurnal_campaigns$data$hour
@@ -276,7 +281,7 @@ diurnal_campaigns_dat = diurnal_campaigns$data$hour
 diurnal_campaigns_dat %>% 
   ggplot(aes(hour,Mean,col = variable)) +
   geom_line(size = 1) +
-  # facet_grid(cols = vars(variable),scales = "free_y") +
+  facet_grid(rows = vars(variable),scales = "free_y") +
   scale_colour_viridis_d() +
   theme_bw() +
   labs(x = "Hour of day (UTC)",
@@ -286,7 +291,7 @@ diurnal_campaigns_dat %>%
   # ylim(-1,12) +
   theme(legend.position = "top")
 
-ggsave('hono_no_nov15.svg',
+ggsave('hono_nox_nov15.svg',
        path = "output/plots/diurnals",
        width = 11,
        height = 13,

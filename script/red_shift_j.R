@@ -60,7 +60,6 @@ test = left_join(date,spec_rad_norm) %>%
   select(-index)
   
 test %>% 
-  filter(date < "2023-03-01") %>%
   pivot_longer(c(jhno3,jo1d,jhono,jo1d,jo3p,jh2o2,jno2)) %>% 
   ggplot(aes(date,value,col = name)) +
   geom_path() +
@@ -69,7 +68,7 @@ test %>%
 NULL
 
 diurnal = test %>% 
-  timeVariation(pollutant = c("jhno3","jhono","jno2"))
+  timeVariation(pollutant = c("jhno3","jo1d","jno2"))
 
 diurnal_dat = diurnal$data$hour
 
