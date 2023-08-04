@@ -18,8 +18,11 @@ nitrate = 1.20 * 10^10 #constant value until more recent measurements are receiv
 
 # Importing data ----------------------------------------------------------
 
-dat = read.csv("output/data/all_data.csv") %>% 
-  mutate(date = ymd_hms(date))
+# dat = read.csv("output/data/all_data.csv") %>% 
+#   mutate(date = ymd_hms(date))
+
+dat = read.csv("output/data/all_data_updated.csv") %>% 
+    mutate(date = ymd_hms(date))
 
 # Photostationary state calculations --------------------------------------
 
@@ -200,7 +203,7 @@ ggsave('15min_diurnal_hono_pss.svg',
 
 #finding enhancement factor for different campaigns
 f_calc = pss_calc %>%   
-  filter(campaign == "February 2020",
+  filter(campaign == "February 2023",
          # date < "2020-02-26",
          hour >= 11 & hour <= 15) %>%
   mutate(lifetime = 1/jhono,
@@ -219,6 +222,36 @@ nitrate_20 = mean(f_calc$nitrate,na.rm = TRUE)
 f_feb20 = missing_production20/(nitrate_20*jhno3_20)
 
 
+
+
+# Calculating daily enhancement factor ------------------------------------
+
+#finding f for each day of the campaign and seeing how it changes with air masses and aerosol composition (eventually)
+
+f_daily = dat %>% 
+  mutate(hour = hour(date),
+         day = day(date)) %>% 
+  filter(campaign == "February 2023",
+         hour >= 11 & hour <= 15) %>% 
+  mutate(lifetime = 1/jhono,
+         h = lifetime * dv,
+         kdep = 0.01/h,
+         no_molecules = no * 2.46 * 10^19 * 10^-12,
+         production_without_nitrate = kp*oh*no_molecules,
+         loss = jhono + (kl*oh) + kdep,
+         loss_hono = loss * hono * 2.46 * 10^19 * 10^-12,
+         missing_production = loss_hono - production_without_nitrate,
+         f = missing_production/(nitrate*jhno3)) %>% 
+  group_by(day) %>% 
+  summarise(f = mean(f,na.rm = TRUE),
+            hono = mean(hono,na.rm = TRUE),
+            sahara = mean(sahara,na.rm = TRUE))
+
+f_daily %>% 
+  filter(is.na(f) == FALSE) %>% 
+  ggplot(aes(hono,f,col = sahara)) + 
+  geom_point() +
+  scale_colour_viridis()
 
 # Production and loss mechanisms ------------------------------------------
 
@@ -348,7 +381,7 @@ dat = df_list %>% reduce(full_join,by = "date")
 write.csv(dat,"output/data/data_for_pss.csv",row.names = FALSE) #saving as .csv
 
 
-# Creating dataframe for all campaigns ------------------------------------
+# Creating dataframe for all campaigns (apart from 2015) ------------------------------------
 
 #getting all data in one dataset for hono and various campaigns
 
@@ -382,6 +415,9 @@ hono = bind_rows(datList) %>%
   select(date,hono = hono.ppt)
 
 hono23 = read.csv("output/data/processed_in_r2.csv") %>% 
+  mutate(date = dmy_hms(date))
+
+hono15 = read.csv("output/data/processed_in_r2.csv") %>% 
   mutate(date = dmy_hms(date))
 
 hono_dat = bind_rows(hono,hono23) %>% 
@@ -465,6 +501,75 @@ dat = df_list %>% reduce(full_join,by = "date") %>%
 
 write.csv(dat,"output/data/all_data.csv",row.names = FALSE) #saving as .csv
 
+# Creating df for all campaigns (with 2015 and air masses) ----------------
+
+#read in data from air_mass_nox_analysis with hono,nox,air masses and nitrate
+dat = read.csv("output/data/hono_nox_airmass_all_campaigns.csv") %>% 
+  mutate(date = ymd_hms(date))
+
+#Spec rad (not for 2015 yet, still missing that data)
+spec_rad23 = read.csv("data/Specrad_hour_23_with_calc.csv") %>% 
+  mutate(date = dmy_hm(date),
+         hour = hour(date)) %>% 
+  clean_names() %>% 
+  mutate(jhono = ifelse(is.na(j_hono),jhono_calc,j_hono),
+         jhno3 = ifelse(is.na(j_hno3),jhno3_calc,j_hno3)) %>% 
+  select(date,hour,jhono,jhno3)
+
+spec_rad_historic = read.csv("data/2016_2020_Spec_rad_Hourly.csv") %>% 
+  mutate(date = dmy_hm(date),
+         hour = hour(date)) %>% 
+  clean_names() %>% 
+  mutate(jhono = ifelse(is.na(j_hono),jhono_calc,j_hono),
+         jhno3 = ifelse(is.na(j_hno3),jhno3_calc,j_hno3)) %>% 
+  select(date,hour,jhono,jhno3)
+
+#have used code above to fill NAs with averages from hours where spec rad data is missing
+spec_rad = bind_rows(spec_rad_historic,spec_rad23) 
+
+#find average jhono and jhno3 values for each hour
+spec_rad_mean = spec_rad %>% 
+  group_by(hour) %>% 
+  summarise(jhono_avg = mean(jhono,na.rm = T),
+            jhno3_avg = mean(jhno3,na.rm = T))
+
+#replace NAs with average value for that hour
+spec_rad_full = left_join(spec_rad,spec_rad_mean,by = "hour") %>% 
+  mutate(jhono = ifelse(is.na(jhono),jhono_avg,jhono),
+         jhno3 = ifelse(is.na(jhno3),jhno3_avg,jhno3)) %>% 
+  select(-c(jhono_avg,jhno3_avg))
+
+#OH
+oh_dat = read.csv("data/OH_provisional.csv") %>% 
+  clean_names() %>% 
+  mutate(date = dmy_hm(time),
+         oh = na.approx(oh_molecules_cm_3,na.rm = F)) %>% #interpolate missing values
+  select(date,oh) %>% 
+  timeAverage("1 hour")
+
+df_list = list(dat,spec_rad_full,oh_dat)
+
+dat2 = df_list %>% reduce(full_join,by = "date") %>% 
+  arrange(date) %>% 
+  mutate(oh = ifelse(campaign != "February 2023",2 * 10^6,oh), #molecules cm-3
+         nitrate = case_when(campaign == "February 2020" ~ 1.20 * 10^10,
+                             campaign == "February 2023" ~ 1.20 * 10^10,
+                             TRUE ~ (nitrate* 10^-12 *6.022 * 10^23)/62.004),#molecules cm-3
+         # nitrate = ifelse(campaign == "February 2020" | campaign == "February 2023",1.20 * 10^10,
+         #                  (nitrate* 10^-12 *6.022 * 10^23)/62.004),
+         nitrate = na.approx(nitrate,na.rm = FALSE)) %>%  
+  select(-hour)
+
+write.csv(dat2,"output/data/all_data_updated.csv",row.names = FALSE) #saving as .csv
+
+dat2 %>% 
+  filter(campaign == "February 2023") %>% 
+  mutate(sahara = na.approx(sahara,na.rm = FALSE)) %>% 
+  pivot_longer(c(hono,no,nitrate,jhono,jhno3,oh)) %>% 
+  ggplot(aes(date,value,col = sahara)) +
+  facet_grid(rows = vars(name),scales = "free_y") +
+  geom_path(size = 0.8) +
+  scale_colour_viridis_c()
 
 # Deposition rate ---------------------------------------------------------
 

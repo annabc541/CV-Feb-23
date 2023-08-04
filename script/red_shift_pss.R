@@ -36,7 +36,6 @@ spec_rad_mean = spec_rad %>%
 
 #replacing missing j values with hourly average calculated above
 #normalising jno2 and jo1d to jhno3
-#not sure why I didn't using interpolation? Will have to check which one is better?
 spec_rad_full = left_join(spec_rad,spec_rad_mean,by = "hour") %>% 
   mutate(jhono = ifelse(is.na(jhono),jhono_avg,jhono),
          jhno3 = ifelse(is.na(jhno3),jhno3_avg,jhno3),
@@ -89,7 +88,7 @@ pss_calc = left_join(dat,spec_rad_full,by = "date") %>%
 
 pss_calc %>% 
   rename(HONO = hono,PSS = pss,PSS_jno2 = pss_red,PSS_jo1d = pss_blue) %>% 
-  pivot_longer(c(HONO,PSS,PSS_jno2,PSS_jo1d)) %>% 
+  pivot_longer(c(HONO,PSS,PSS_jo1d)) %>% 
   ggplot(aes(date,value,col = name)) +
   geom_path(size = 0.8) +
   scale_color_viridis_d() +
@@ -101,7 +100,7 @@ pss_calc %>%
   theme(legend.position = "top") +
   NULL
 
-ggsave('pss_jno2_timeseries.svg',
+ggsave('pss_jo1d_timeseries.svg',
        path = "output/plots/red_shift",
        width = 30,
        height = 12,
@@ -112,15 +111,15 @@ ggsave('pss_jno2_timeseries.svg',
 diurnal = pss_calc %>% 
   filter(is.na(hono) == FALSE) %>% 
   rename(HONO = hono,PSS = pss,PSS_jno2 = pss_red,PSS_jo1d = pss_blue) %>% 
-  timeVariation(pollutant = c("HONO","PSS","PSS_jno2","PSS_jo1d"))
+  timeVariation(pollutant = c("HONO","PSS","PSS_jo1d"))
 
 diurnal_dat = diurnal$data$hour
 
 diurnal_dat %>% 
   ggplot(aes(hour,Mean,col = variable)) +
-  geom_path(size = 0.8) +
   scale_color_viridis_d() +
   theme_bw() +
+  geom_path(size = 0.8) +
   labs(x = "Hour of day (UTC)",
        y = "HONO (ppt)",
        color = NULL) +
@@ -128,7 +127,7 @@ diurnal_dat %>%
   # facet_grid(rows = vars(variable),scales = "free_y") +
   theme(legend.position = "top")
 
-ggsave('diurnal_red_blue_shifted_pss.svg',
+ggsave('diurnal_blue_shifted_pss.svg',
        path = "output/plots/red_shift",
        width = 30,
        height = 12,
