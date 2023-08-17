@@ -21,7 +21,7 @@ nitrate = 1.20 * 10^10 #constant value until more recent measurements are receiv
 # dat = read.csv("output/data/all_data.csv") %>% 
 #   mutate(date = ymd_hms(date))
 
-dat = read.csv("output/data/all_data_updated.csv") %>% 
+dat_all = read.csv("output/data/all_data_updated.csv") %>% 
     mutate(date = ymd_hms(date))
 
 # Photostationary state calculations --------------------------------------
@@ -32,35 +32,45 @@ dat = read.csv("output/data/all_data_updated.csv") %>%
 
 #can change f and kdep and other parameters as needed and compare them
 
-pss_calc = dat %>% 
+pss_calc = dat_all %>% 
   mutate(hour = hour(date),
          lifetime = ifelse(hour >= 11 & hour <= 15,1/jhono,NA_real_),
          lifetime = na.approx(lifetime,na.rm = FALSE),
          nitrate = na.approx(nitrate,na.rm = FALSE),
          h = lifetime * dv,
          kdep1 = 0.01/h,
+         kdep3 = 0.03/h,
          no_molecules = no * 2.46 * 10^19 * 10^-12,
-         pss = case_when(campaign == "August 2019" ~ ((kp*oh*no_molecules + (jhno3 * nitrate * 20)) / (jhono + (kl*oh) + kdep1))
+         pss1 = case_when(campaign == "August 2019" ~ ((kp*oh*no_molecules + (jhno3 * nitrate * 20)) / (jhono + (kl*oh) + kdep1))
                          / (2.46 * 10^19 * 10^-12),
                          campaign == "February 2020" ~ ((kp*oh*no_molecules + (jhno3 * nitrate * 11)) / (jhono + (kl*oh) + kdep1))
                          / (2.46 * 10^19 * 10^-12),
-                         campaign == "February 2023" ~ ((kp*oh*no_molecules + (jhno3 * nitrate * 58)) / (jhono + (kl*oh) + kdep1))
-                         / (2.46 * 10^19 * 10^-12)))
+                         campaign == "February 2023" ~ ((kp*oh*no_molecules + (jhno3 * nitrate * 63)) / (jhono + (kl*oh) + kdep1))
+                         / (2.46 * 10^19 * 10^-12)),
+         pss3 = ((kp*oh*no_molecules + (jhno3 * nitrate * 67)) / (jhono + (kl*oh) + kdep3))
+         / (2.46 * 10^19 * 10^-12))
 
 pss_calc %>% 
-  filter(campaign == "August 2019",
-         date < "2019-08-24") %>% 
-  pivot_longer(c(pss,hono)) %>%
-  ggplot(aes(date,value,col = nitrate)) +
+  filter(campaign == "February 2023") %>% 
+  rename('Dep velocity = 1' = pss1,
+         'Dep velocity = 3' = pss3,
+         'Observed' = hono) %>% 
+  pivot_longer(c('Dep velocity = 1','Dep velocity = 3','Observed')) %>%
+  ggplot(aes(date,value,col = name)) +
+  theme_bw() +
+  labs(x = "Datetime (UTC)",
+       y = "HONO (ppt)",
+       color = NULL) +
   geom_path(size = 0.8) +
-  # scale_x_datetime(breaks = "1 day",date_labels = "%d/%m")
-  scale_color_viridis() +
-  facet_grid(rows = vars(name)) +
+  theme(legend.position = "top") +
+  scale_x_datetime(breaks = "1 day",date_labels = "%d/%m") +
+  scale_color_viridis_d() +
+  # facet_grid(rows = vars(name)) +
   # facet_wrap(vars(campaign),scales = "free", ncol =1) +
   NULL
 
-ggsave('pss20_nitrate_col.svg',
-       path = "output/plots/pss/august19",
+ggsave('fcalc_dep_vel.svg',
+       path = "output/plots/pss/feb23",
        width = 30,
        height = 12,
        units = 'cm')
@@ -72,25 +82,25 @@ ggsave('pss20_nitrate_col.svg',
 diurnal = pss_calc %>% 
   filter(campaign == "February 2023",
          is.na(hono) == FALSE) %>% 
-  rename(HONO = hono,PSS = pss) %>% 
-  timeVariation(pollutant = c("HONO","PSS"))
+  rename(HONO = hono,'f = 63' = pss1, 'f = 68' = pss3) %>% 
+  timeVariation(pollutant = c("HONO",'f = 63','f = 68'))
 
 diurnal_dat = diurnal$data$hour
 
 diurnal_dat %>% 
   ggplot(aes(hour,Mean,col = variable)) +
   geom_line(size = 1) +
-  scale_color_manual(values = viridis(2)) +
+  scale_color_manual(values = viridis(3)) +
   theme_bw() +
   labs(x = "Hour of day (UTC)",
        y = "HONO (ppt)",
        color = NULL) +
   scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
-  ylim(-1.5,12) + #in order to have same sized axes for diurnals for all three campaigns
+  ylim(-1.5,13) + #in order to have same sized axes for diurnals for all three campaigns
   theme(legend.position = "top")
 
-ggsave('hourly_diurnal_hono_pss.svg',
-       path = "output/plots/red_shift",
+ggsave('diurnal_f_calc_dep_vel.svg',
+       path = "output/plots/pss/feb23",
        width = 11,
        height = 13,
        units = 'cm')
@@ -195,20 +205,20 @@ ggsave('15min_diurnal_hono_pss.svg',
 
 #can change anything in code below to find f for different parameters
 
-#for deposition velocity = 0.01 f = 57
-#for deposition velocity = 0.03 f = 61
+#for deposition velocity = 0.01 f = 63 (used to be f = 57 before mfc cal)
+#for deposition velocity = 0.03 f = 68 (used to be f = 61 before mfc cal)
 
 #for August 2019 f = 20 (deposition velocity = 0.01)
 #for February 2020 f = 11 (deposition velocity = 0.01)
 
 #finding enhancement factor for different campaigns
-f_calc = pss_calc %>%   
+f_calc_all = pss_calc %>%   
   filter(campaign == "February 2023",
          # date < "2020-02-26",
          hour >= 11 & hour <= 15) %>%
   mutate(lifetime = 1/jhono,
          h = lifetime * dv,
-         kdep = 0.01/h, #change as needed
+         kdep = 0.03/h, #change as needed
          production_without_nitrate = kp*oh*no_molecules,
          loss = jhono + (kl*oh) + kdep,
          loss_hono = loss * hono * 2.46 * 10^19 * 10^-12,
@@ -216,10 +226,10 @@ f_calc = pss_calc %>%
 
 #finding f - daytime median of missing production and jhno3 used
 #specifically between 10 and 15 local time - 11 and 16 UTC
-missing_production20 = mean(f_calc$missing_production,na.rm = TRUE)
-jhno3_20= mean(f_calc$jhno3,na.rm = TRUE)
-nitrate_20 = mean(f_calc$nitrate,na.rm = TRUE)
-f_feb20 = missing_production20/(nitrate_20*jhno3_20)
+missing_production23 = mean(f_calc_all$missing_production,na.rm = TRUE)
+jhno3_23 = mean(f_calc_all$jhno3,na.rm = TRUE)
+nitrate_23 = mean(f_calc_all$nitrate,na.rm = TRUE)
+f_feb23 = missing_production23/(nitrate_23*jhno3_23)
 
 
 
@@ -371,7 +381,7 @@ nox_dat = read.csv("data/nox_data/nox23.csv") %>%
   select(date,no = NO_Conc_art_corrected) %>%  
   timeAverage("1 hour")
 
-hono_dat = read.csv("output/data/processed_in_r2.csv") %>% 
+hono_dat = read.csv("output/data/processed_in_r4.csv") %>% 
   mutate(date = ymd_hms(date)) %>% 
   select(date,hono) %>% 
   timeAverage("1 hour")
@@ -414,10 +424,7 @@ hono = bind_rows(datList) %>%
   mutate(date = dmy_hms(start.gmt)) %>% 
   select(date,hono = hono.ppt)
 
-hono23 = read.csv("output/data/processed_in_r2.csv") %>% 
-  mutate(date = dmy_hms(date))
-
-hono15 = read.csv("output/data/processed_in_r2.csv") %>% 
+hono23 = read.csv("output/data/processed_in_r4.csv") %>% 
   mutate(date = dmy_hms(date))
 
 hono_dat = bind_rows(hono,hono23) %>% 

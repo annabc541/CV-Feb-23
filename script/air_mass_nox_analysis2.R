@@ -7,7 +7,9 @@ library(viridis)
 
 Sys.setenv(TZ = 'UTC')
 
-#most recent change: filtered out HONO on 16/02/20 because it looked very suspicious
+#LOPAP MFC calibration has been run, have rerun code to generate up to date plots for everything aprart 
+#from hono and nox timeseries and diurnals with hono and no/nox in the same plot (need to adjust axes
+#for all other plots so they will have to be rerun too)
 
 # Universal dataframes ----------------------------------------------------
 
@@ -157,7 +159,7 @@ ggsave('hono_nox_sahara_feb20.svg',
 # February 2023 -----------------------------------------------------------
 
 #five-minute average
-hono23 = read.csv("output/data/processed_in_r3.csv") %>% 
+hono23 = read.csv("output/data/processed_in_r4.csv") %>% 
   mutate(date = ymd_hms(date)) %>% 
   timeAverage("5 min") %>%
   select(date,hono)
@@ -177,20 +179,20 @@ dat23 %>%
   timeAverage("1 hour") %>% 
   mutate(sahara = na.approx(sahara,na.rm = FALSE)) %>% 
   rename(NO = no, HONO = hono, 'NO[2]' = no2,) %>% 
-  # pivot_longer(c(HONO,NO,'NO[2]')) %>% 
+  pivot_longer(c(HONO,NO,'NO[2]')) %>%
   filter(date > "2023-02-07 11:00" & date < "2023-02-26 19:00") %>% 
-  ggplot(aes(date,HONO,col = sahara)) +
+  ggplot(aes(date,value,col = sahara)) +
   theme_bw() +
   geom_path(size = 0.8) +
-  # facet_grid(rows = vars(name),scales = "free_y",labeller = label_parsed) +
+  facet_grid(rows = vars(name),scales = "free_y",labeller = label_parsed) +
   scale_colour_viridis_c() +
   labs(x = "Datetime (UTC)",
-       y = "HONO (ppt)",
+       y = "ppt",
        color = "Sahara %") +
-  scale_x_datetime(date_breaks = "1 day",date_labels = "%d/%m/%y") +
+  scale_x_datetime(date_breaks = "2 day",date_labels = "%d/%m/%y") +
   NULL
 
-ggsave('hono_sahara_feb23.svg',
+ggsave('hono_nox_sahara_feb23.svg',
        path = "output/plots/timeseries",
        width = 30,
        height = 12,
@@ -270,28 +272,28 @@ ggsave('hono_all_campaigns.svg',
 # Campaign diurnals -------------------------------------------------------
 
 diurnal_campaigns = dat %>% 
-  mutate(NOx = no + no2) %>%
+  mutate('NO[x]' = no + no2) %>%
   rename(HONO = hono,NO = no,'NO[2]' = no2) %>% 
   filter(is.na(HONO) == FALSE,
-         campaign == "November 2015") %>% 
-  timeVariation(pollutant = c("HONO","NOx"))
+         campaign == "February 2023") %>% 
+  timeVariation(pollutant = c("HONO",'NO[x]'))
 
 diurnal_campaigns_dat = diurnal_campaigns$data$hour
 
 diurnal_campaigns_dat %>% 
   ggplot(aes(hour,Mean,col = variable)) +
   geom_line(size = 1) +
-  facet_grid(rows = vars(variable),scales = "free_y") +
+  facet_grid(rows = vars(variable),scales = "free_y",labeller = label_parsed) +
   scale_colour_viridis_d() +
   theme_bw() +
   labs(x = "Hour of day (UTC)",
        y = "Mixing ratio (ppt)",
        color = NULL) +
   scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
-  # ylim(-1,12) +
+  # ylim(-1,13) +
   theme(legend.position = "top")
 
-ggsave('hono_nox_nov15.svg',
+ggsave('hono_nox_feb23.svg',
        path = "output/plots/diurnals",
        width = 11,
        height = 13,

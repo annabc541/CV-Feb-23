@@ -13,18 +13,18 @@ library(viridis)
 Sys.setenv(TZ = "UTC")
 
 
-cal0.5_ch1 = 326.01
-cal0.5_ch2 = 344.74
-cal1_ch1 = 566.46
-cal1_ch2 = 589.64
-cal2_ch1 = 618.89
-cal2_ch2 = 643.18
+cal0.5_ch1 = 359.93
+cal0.5_ch2 = 380.61
+cal1_ch1 = 625.39
+cal1_ch2 = 650.99
+cal2_ch1 = 683.29
+cal2_ch2 = 710.10
 
 date_corr1 = 22.75 * 60
 date_corr2 = 23.67 * 60
 date_corr3 = 22.33 * 60
 
-se = 0.999
+se = 1
 
 # Functions ---------------------------------------------------------------
 
@@ -512,10 +512,7 @@ ggsave('processing_all_cal2.png',
        height = 12,
        units = 'cm')
 
-write.csv(processed_dat,"output/data/processed_in_r3.csv",row.names = FALSE)
-
-
-
+write.csv(processed_dat,"output/data/processed_in_r4.csv",row.names = FALSE)
 
 # What cal values to use for the first few days of data? ------------------
 
