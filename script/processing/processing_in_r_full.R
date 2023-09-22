@@ -206,7 +206,7 @@ dat1_calibrated = zeroed %>%
                           between(date,as.POSIXct("2023-02-16 15:25"),as.POSIXct("2023-02-16 16:15")) ~ 1,
                           between(date,as.POSIXct("2023-02-16 21:08"),as.POSIXct("2023-02-16 21:54")) ~ 2,
                           between(date,as.POSIXct("2023-02-17 03:35"),as.POSIXct("2023-02-17 04:12")) ~ 2,
-                          between(date,as.POSIXct("2023-02-17 09:03"),as.POSIXct("2023-02-17 15:55")) ~ 1,
+                          between(date,as.POSIXct("2023-02-17 09:03"),as.POSIXct("2023-02-17 18:12")) ~ 1,
                           TRUE ~ 0))
 
 #flags:
@@ -217,10 +217,10 @@ dat1_calibrated = zeroed %>%
 #4 for air in abs
 #5 other
 
-dat1_calibrated %>% 
-  filter(flag == 0) %>% 
-  ggplot(aes(date,hono)) +
-  geom_point()
+# dat1_calibrated %>% 
+#   filter(flag == 0) %>% 
+#   ggplot(aes(date,hono)) +
+#   geom_point()
 
 # Despiking r1 ---------------------------------------------------------------
 
@@ -253,11 +253,11 @@ despiked_dat = despiking %>%
          idx = n():1,
          instrumental_noise_flag = ifelse(idx < 7, 1,instrumental_noise_flag)) #removes last x values of group 
 
-despiked_dat %>% 
-  mutate(flagged_hono = ifelse(instrumental_noise_flag == 1, NA_real_,flagged_hono)) %>%
-  ggplot(aes(date,flagged_hono)) +
-  scale_x_datetime(date_breaks = "1 day",date_labels = "%d/%m") +
-  geom_path()
+# despiked_dat %>% 
+#   mutate(flagged_hono = ifelse(instrumental_noise_flag == 1, NA_real_,flagged_hono)) %>%
+#   ggplot(aes(date,flagged_hono)) +
+#   scale_x_datetime(date_breaks = "1 day",date_labels = "%d/%m") +
+#   geom_path()
 
 processed_dat1 = despiked_dat %>% 
   ungroup() %>% 
@@ -439,8 +439,7 @@ dat2_calibrated = zeroed %>%
          ch2_ppt = ch2_zeroed * slope_cal2,
          hono = ppt(ch1_ppt,ch2_ppt,sampling_efficiency),
          date = date - time_corr,
-         flag = (case_when(between(date,as.POSIXct("2023-02-17 09:03"),as.POSIXct("2023-02-17 15:55")) ~ 1, #changing reagents
-                           between(date,as.POSIXct("2023-02-17 15:55"),as.POSIXct("2023-02-17 18:12")) ~ 5, #zeroes and air in abs
+         flag = (case_when(between(date,as.POSIXct("2023-02-17 08:30"),as.POSIXct("2023-02-17 18:12")) ~ 1, #changing reagents
                            between(date,as.POSIXct("2023-02-17 23:45"),as.POSIXct("2023-02-18 01:09")) ~ 2,
                            between(date,as.POSIXct("2023-02-18 04:47"),as.POSIXct("2023-02-18 08:55")) ~ 4,
                            between(date,as.POSIXct("2023-02-18 09:14"),as.POSIXct("2023-02-18 10:27")) ~ 2,
@@ -478,10 +477,10 @@ dat2_calibrated = zeroed %>%
                            between(date,as.POSIXct("2023-02-26 15:52"),as.POSIXct("2023-02-26 16:32")) ~ 2,
                            TRUE ~ 0)))
 
-dat2_calibrated %>% 
-  filter(flag == 0) %>% 
-  ggplot(aes(date,hono)) +
-  geom_point()
+# dat2_calibrated %>% 
+#   filter(flag == 0) %>% 
+#   ggplot(aes(date,hono)) +
+#   geom_point()
 
 processed_dat2 = dat2_calibrated %>%
   select(date,hono,flag,measuring_conditions)
@@ -594,10 +593,10 @@ dat3_calibrated = zeroed %>%
                           date > "2023-02-09 09:30" ~ 5,
                           TRUE ~ 0))
 
-dat3_calibrated %>% 
-  filter(flag == 0) %>% 
-  ggplot(aes(date,hono)) +
-  geom_point()
+# dat3_calibrated %>% 
+#   filter(flag == 0) %>% 
+#   ggplot(aes(date,hono)) +
+#   geom_point()
 
 
 # Despiking r0.5 ----------------------------------------------------------
@@ -630,12 +629,12 @@ despiked_dat = despiking %>%
          idx = n():1,
          instrumental_noise_flag = ifelse(idx < 7, 1,instrumental_noise_flag)) #removes last x values of group 
 
-despiked_dat %>% 
-  mutate(flagged_hono = ifelse(instrumental_noise_flag == 1, NA_real_,flagged_hono)) %>%
-  # timeAverage("1 hour") %>% 
-  ggplot(aes(date,flagged_hono)) +
-  scale_x_datetime(date_breaks = "1 day",date_labels = "%d/%m") +
-  geom_path()
+# despiked_dat %>% 
+#   mutate(flagged_hono = ifelse(instrumental_noise_flag == 1, NA_real_,flagged_hono)) %>%
+#   # timeAverage("1 hour") %>% 
+#   ggplot(aes(date,flagged_hono)) +
+#   scale_x_datetime(date_breaks = "1 day",date_labels = "%d/%m") +
+#   geom_path()
 
 processed_dat3 = despiked_dat %>% 
   ungroup() %>% 
@@ -646,13 +645,29 @@ processed_dat3 = despiked_dat %>%
 
 # Final data --------------------------------------------------------------
 
-final_dat = bind_rows(processed_dat3,processed_dat1,processed_dat2)
+#flags:
+#0 good data
+#1 for water/abs closed
+#2 for zero
+#3 for cal
+#4 for air in abs
+#5 other
+
+final_dat = bind_rows(processed_dat3,processed_dat1,processed_dat2) %>% 
+  mutate(date = date + 3600,
+         hono = ifelse(flag == 0, hono,NA_real_),
+         flag = case_when(measuring_conditions == "Reagents 1, cal 1" ~ 1,
+                          measuring_conditions == "Reagents 1, cal 2" ~ 0,
+                          measuring_conditions == "Reagents 2, ZA zeroes" ~ 0,
+                          measuring_conditions == "Reagents 2, nighttime zeroes" ~ 2)) %>% 
+  select(date,hono,flag) %>% 
+  timeAverage("5 min")
 
 library(openair)
 
 final_dat %>% 
-  mutate(hono = ifelse(flag == 0,hono,NA_real_)) %>% 
-  ggplot(aes(date,hono,col = measuring_conditions)) +
+  mutate(hono = ifelse(flag == 0,hono,NA_real_)) %>%
+  ggplot(aes(date,hono)) +
   theme_bw() +
   geom_path(size = 0.8) +
   labs(x = "Datetime (UTC)",
@@ -662,10 +677,10 @@ final_dat %>%
   scale_colour_viridis_d() +
   theme(legend.position = "top")
 
-write.csv(final_dat,"output/data/hono23.csv",row.names = FALSE)
+# write.csv(final_dat,"output/data/hono23.csv",row.names = FALSE)
 
-ggsave('hono23_timeseries_colour_coded.svg',
-       path = "output/plots/hono23",
-       width = 30,
-       height = 12,
-       units = 'cm')
+# ggsave('hono23_timeseries.svg',
+#        path = "output/plots/hono23",
+#        width = 30,
+#        height = 12,
+#        units = 'cm')

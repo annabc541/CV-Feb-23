@@ -381,13 +381,16 @@ nox_dat = read.csv("data/nox_data/nox23.csv") %>%
   select(date,no = NO_Conc_art_corrected) %>%  
   timeAverage("1 hour")
 
-hono_dat = read.csv("output/data/processed_in_r4.csv") %>% 
-  mutate(date = ymd_hms(date)) %>% 
+hono_dat = read.csv("output/data/hono23.csv") %>% 
+  mutate(date = ymd_hms(date),
+         hono = ifelse(flag == 0,hono,NA_real_)) %>% 
   select(date,hono) %>% 
   timeAverage("1 hour")
 
 df_list = list(nox_dat,oh_dat,hono_dat,spec_rad)
-dat = df_list %>% reduce(full_join,by = "date")
+dat = df_list %>% reduce(full_join,by = "date") %>% 
+  filter(date > "2023-02-07 07:00" & date < "2023-02-26 19:00")
+
 write.csv(dat,"output/data/data_for_pss.csv",row.names = FALSE) #saving as .csv
 
 

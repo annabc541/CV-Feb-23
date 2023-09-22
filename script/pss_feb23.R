@@ -79,3 +79,70 @@ missing_production1 = mean(f_calc$missing_production1,na.rm = TRUE)
 f1 = missing_production1/(nitrate*jhno3)
 missing_production3 = mean(f_calc$missing_production3,na.rm = TRUE)
 f3 = missing_production3/(nitrate*jhno3)
+
+# PSS with calculated f ---------------------------------------------------------
+
+pss_calc = dat %>% 
+  mutate(hour = hour(date),
+         lifetime = ifelse(hour >= 11 & hour <= 15,1/jhono,NA_real_),
+         lifetime = na.approx(lifetime,na.rm = FALSE),
+         nitrate = na.approx(nitrate,na.rm = FALSE),
+         h = lifetime * dv,
+         kdep1 = 0.01/h,
+         kdep3 = 0.03/h,
+         no_molecules = no * 2.46 * 10^19 * 10^-12,
+         pss1 = (kp*oh*no_molecules + (jhno3 * nitrate * f1)) / (jhono + (kl*oh) + kdep1)
+         / (2.46 * 10^19 * 10^-12),
+         pss3 = (kp*oh*no_molecules + (jhno3 * nitrate * f3)) / (jhono + (kl*oh) + kdep3)
+         / (2.46 * 10^19 * 10^-12))
+
+pss_calc %>%  
+  # filter(date < "2023-02-27" & date > "2023-02-06") %>% 
+  rename('f = 63' = pss1,
+         'f = 67' = pss3,
+         'Observed' = hono) %>% 
+  pivot_longer(c('f = 63','f = 67','Observed')) %>%
+  ggplot(aes(date,value,col = name)) +
+  theme_bw() +
+  labs(x = "Hour of day (UTC)",
+       y = "HONO (ppt)",
+       color = NULL) +
+  geom_path(size = 0.8) +
+  theme(legend.position = "top") +
+  scale_x_datetime(breaks = "1 day",date_labels = "%d/%m") +
+  scale_color_viridis_d() +
+  NULL
+
+ggsave('fcalc_dep_vel.svg',
+       path = "output/plots/pss/feb23",
+       width = 30,
+       height = 12,
+       units = 'cm')
+
+
+# Diurnals ----------------------------------------------------------------
+
+diurnal = pss_calc %>% 
+  filter(is.na(hono) == FALSE) %>% 
+  rename(HONO = hono,'f = 62' = pss1, 'f = 66' = pss3) %>% 
+  timeVariation(pollutant = c("HONO",'f = 62','f = 66'))
+
+diurnal_dat = diurnal$data$hour
+
+diurnal_dat %>% 
+  ggplot(aes(hour,Mean,col = variable)) +
+  geom_line(size = 1) +
+  scale_color_manual(values = viridis(3)) +
+  theme_bw() +
+  labs(x = "Hour of day (UTC)",
+       y = "HONO (ppt)",
+       color = NULL) +
+  scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
+  ylim(-1.5,13) + #in order to have same sized axes for diurnals for all three campaigns
+  theme(legend.position = "top")
+
+ggsave('diurnal_fcalc_dep_vel.svg',
+       path = "output/plots/pss/feb23",
+       width = 30,
+       height = 12,
+       units = 'cm')
