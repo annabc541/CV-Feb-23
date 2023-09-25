@@ -19,8 +19,8 @@ dat = read.csv("output/data/all_data.csv") %>%
 dat %>% 
   filter(campaign != "no campaign") %>% 
   mutate(sahara = na.approx(sahara,na.rm = F)) %>%
-  fill(sahara,.direction = "up") %>%
-  ggplot(aes(date,hono,col = sahara)) +
+  # fill(sahara,.direction = "up") %>%
+  ggplot(aes(date,hono)) +
   geom_path(size = 0.8) +
   scale_color_viridis() +
   labs(x = NULL,
@@ -33,7 +33,7 @@ dat %>%
   scale_x_datetime(date_breaks = "1 day",date_labels = "%d/%m") +
   NULL
 
-ggsave('hono_across_the_years_sahara.svg',
+ggsave('hono23_hourly.svg',
        path = "output/plots/timeseries",
        width = 30,
        height = 12,
@@ -109,25 +109,31 @@ diurnal_campaigns = dat %>%
   rename(HONO = hono,NO = no,'NO[2]' = no2) %>% 
   filter(is.na(HONO) == FALSE,
          campaign == "February 2023") %>% 
-  timeVariation(pollutant = c("HONO",'NO[x]'))
+  timeVariation(pollutant = "HONO")
 
 diurnal_campaigns_dat = diurnal_campaigns$data$hour
 
+diurnal_dat = diurnal_campaigns_dat %>% 
+  ungroup() %>% 
+  select(hour,hono = Mean)
+
+write.csv(diurnal_dat,"output/data/diurnal_hono_feb23.csv",row.names = F)
+
 diurnal_campaigns_dat %>% 
-  ggplot(aes(hour,Mean,col = variable)) +
+  ggplot(aes(hour,Mean)) +
   geom_line(size = 1) +
-  facet_grid(rows = vars(variable),scales = "free_y",labeller = label_parsed) +
+  # facet_grid(rows = vars(variable),scales = "free_y",labeller = label_parsed) +
   scale_colour_viridis_d() +
   theme_bw() +
   labs(x = "Hour of day (UTC)",
-       y = "Mixing ratio (ppt)",
+       y = "HONO (ppt)",
        color = NULL) +
   scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
   # ylim(-1,13) +
   theme(legend.position = "top")
 
-ggsave('hono_nox_feb23.svg',
+ggsave('hono_diurnal23.svg',
        path = "output/plots/diurnals",
-       width = 11,
-       height = 13,
+       width = 33,
+       height = 19,
        units = 'cm')

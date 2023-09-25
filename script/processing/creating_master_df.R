@@ -35,29 +35,29 @@ oh_dat = read.csv("data/OH_provisional.csv") %>%
 #using calculated values rather than measured values because of weird cal (see presentation from Katie)
 spec_rad15 = read.csv("data/spec_rad/jrates_all_new_2015-2020.csv") %>% 
   clean_names() %>%
-  mutate(date = dmy_hm(date),
-         hour = hour(date)) %>% 
+  mutate(date = dmy_hm(date)) %>% 
   filter(date > "2015-11-23" & date < "2015-12-04") %>%
-  select(date,hour,jhono = jhono_calc,jhno3 = jhno3_calc)
+  timeAverage("1 hour") %>% 
+  select(date,jhono = jhono_calc,jhno3 = jhno3_calc)
 
 spec_rad23 = read.csv("data/spec_rad/Specrad_hour_23_with_calc.csv") %>% 
   mutate(date = dmy_hm(date),
-         hour = hour(date)) %>% 
+         date = date + 3600) %>% 
   clean_names() %>% 
   mutate(jhono = ifelse(is.na(j_hono),jhono_calc,j_hono),
          jhno3 = ifelse(is.na(j_hno3),jhno3_calc,j_hno3)) %>% 
-  select(date,hour,jhono,jhno3)
+  select(date,jhono,jhno3)
 
 spec_rad_historic = read.csv("data/spec_rad/2016_2020_Spec_rad_Hourly.csv") %>% 
-  mutate(date = dmy_hm(date),
-         hour = hour(date)) %>% 
+  mutate(date = dmy_hm(date)) %>% 
   clean_names() %>% 
   mutate(jhono = ifelse(is.na(j_hono),jhono_calc,j_hono),
          jhno3 = ifelse(is.na(j_hno3),jhno3_calc,j_hno3)) %>% 
-  select(date,hour,jhono,jhno3)
+  select(date,jhono,jhno3)
 
 #fill NAs with averages from hours where spec rad data is missing when reading data in
-spec_rad_to_fix = bind_rows(spec_rad_historic,spec_rad23) 
+spec_rad_to_fix = bind_rows(spec_rad15,spec_rad_historic,spec_rad23) %>% 
+  mutate(hour = hour(date))
 
 #find average jhono and jhno3 values for each hour
 spec_rad_mean = spec_rad_to_fix %>% 
@@ -66,14 +66,12 @@ spec_rad_mean = spec_rad_to_fix %>%
             jhno3_avg = mean(jhno3,na.rm = T))
 
 #replace NAs with average value for that hour
-spec_rad_full = left_join(spec_rad_to_fix,spec_rad_mean,by = "hour") %>% 
+spec_rad = left_join(spec_rad_to_fix,spec_rad_mean,by = "hour") %>% 
   mutate(jhono = ifelse(is.na(jhono),jhono_avg,jhono),
          jhno3 = ifelse(is.na(jhno3),jhno3_avg,jhno3)) %>% 
   select(-c(jhono_avg,jhno3_avg))
 
-spec_rad = bind_rows(spec_rad15,spec_rad_full)
-
-remove(spec_rad_full,spec_rad_historic,spec_rad_mean,spec_rad_to_fix,spec_rad15,spec_rad23)
+remove(spec_rad_historic,spec_rad_mean,spec_rad_to_fix,spec_rad15,spec_rad23)
 
 # Met data ----------------------------------------------------------------
 
@@ -159,7 +157,7 @@ df_list = list(hono,nox,oh_dat,nitrate_dat,spec_rad,met_data,air_mass)
 dat = df_list %>% reduce(full_join,by = "date") %>% 
   arrange(date) %>% 
   filter(date < "2023-02-28",
-         date > "2015-11-24 17:00") %>% 
+         date > "2015-11-23") %>% 
   timeAverage("1 hour") %>% 
   mutate(campaign = case_when (date > "2015-11-24 17:00" & date < "2015-12-03 19:00" ~ "November 2015",
                                date > "2019-08-15 12:29" & date < "2019-08-29 01:00" ~ "August 2019",
@@ -171,10 +169,10 @@ dat = df_list %>% reduce(full_join,by = "date") %>%
                              campaign == "February 2023" ~ 1.20 * 10^10,
                              TRUE ~ (nitrate* 10^-12 *6.022 * 10^23)/62.004))#molecules cm-3
 
-write.csv(dat,"output/data/all_data.csv",row.names = F)
+write.csv(dat,"output/data/all_data2.csv",row.names = F)
 
-nitrate_dat %>% 
-  filter(date > "2015-11-24 17:00" & date < "2015-12-03 19:00") %>% 
-  # timeAverage("1 hour") %>% 
-  ggplot(aes(date,nitrate)) +
-  geom_point()
+# nitrate_dat %>% 
+#   filter(date > "2015-11-23" & date < "2015-12-03 19:00") %>% 
+#   # timeAverage("1 hour") %>% 
+#   ggplot(aes(date,nitrate)) +
+#   geom_point()
