@@ -653,31 +653,32 @@ processed_dat3 = despiked_dat %>%
 #4 for air in abs
 #5 other
 
+library(openair)
+
 final_dat = bind_rows(processed_dat3,processed_dat1,processed_dat2) %>% 
-  mutate(date = date + 3600,
-         hono = ifelse(flag == 0, hono,NA_real_),
+  mutate(hono = ifelse(flag == 0, hono,NA_real_),
+         date = date + 3600, #time zone correction - makes data utc
          flag = case_when(measuring_conditions == "Reagents 1, cal 1" ~ 1,
                           measuring_conditions == "Reagents 1, cal 2" ~ 0,
                           measuring_conditions == "Reagents 2, ZA zeroes" ~ 0,
                           measuring_conditions == "Reagents 2, nighttime zeroes" ~ 2)) %>% 
-  select(date,hono,flag) %>% 
+  select(date,hono,flag) %>%
   timeAverage("5 min")
 
-library(openair)
+# final_dat %>% 
+#   mutate(doy = yday(date)) %>%  
+#   ggplot(aes(date,hono)) +
+#   theme_bw() +
+#   geom_path(size = 0.8) +
+#   labs(x = "Datetime (LT)",
+#        y = "HONO / ppt",
+#        col = NULL) +
+#   facet_wrap(vars(doy),scales = "free") +
+#   scale_x_datetime(date_breaks = "2 hours",date_labels = "%H") +
+#   scale_colour_viridis_d() +
+#   theme(legend.position = "top")
 
-final_dat %>% 
-  mutate(hono = ifelse(flag == 0,hono,NA_real_)) %>%
-  ggplot(aes(date,hono)) +
-  theme_bw() +
-  geom_path(size = 0.8) +
-  labs(x = "Datetime (UTC)",
-       y = "HONO / ppt",
-       col = NULL) +
-  scale_x_datetime(date_breaks = "1 day",date_labels = "%d/%m") +
-  scale_colour_viridis_d() +
-  theme(legend.position = "top")
-
-# write.csv(final_dat,"output/data/hono23.csv",row.names = FALSE)
+write.csv(final_dat,"output/data/hono23_lt.csv",row.names = FALSE)
 
 # ggsave('hono23_timeseries.svg',
 #        path = "output/plots/hono23",

@@ -8,6 +8,12 @@ library(viridis)
 Sys.setenv(TZ = 'UTC')
 
 #for creating a dataframe with HONO,NOx,nitrate,air masses,met data,OH
+#as far as I know, all the data is in UTC
+#HONO 2023 data has been corrected before being read in
+#spec rad data from 2023 is corrected when it is read in
+#HONO 2015 data is corrected when it is read in
+#the three above sets of data are in LT rather than UTC
+#all other data is in UTC
 
 # Nitrate,air masses,OH ----------------------------------------------------
 
@@ -40,23 +46,22 @@ spec_rad15 = read.csv("data/spec_rad/jrates_all_new_2015-2020.csv") %>%
   timeAverage("1 hour") %>% 
   select(date,jhono = jhono_calc,jhno3 = jhno3_calc)
 
-spec_rad23 = read.csv("data/spec_rad/Specrad_hour_23_with_calc.csv") %>% 
-  mutate(date = dmy_hm(date),
-         date = date + 3600) %>% 
-  clean_names() %>% 
-  mutate(jhono = ifelse(is.na(j_hono),jhono_calc,j_hono),
-         jhno3 = ifelse(is.na(j_hno3),jhno3_calc,j_hno3)) %>% 
-  select(date,jhono,jhno3)
+# spec_rad23 = read.csv("data/spec_rad/Specrad_hour_23_with_calc.csv") %>% 
+#   mutate(date = dmy_hm(date),
+#          date = date + 3600) %>% #changing data to utc
+#   clean_names() %>% 
+#   mutate(jhono = ifelse(is.na(j_hono),jhono_calc,j_hono),
+#          jhno3 = ifelse(is.na(j_hno3),jhno3_calc,j_hno3)) %>% 
+#   select(date,jhono,jhno3)
 
-spec_rad_historic = read.csv("data/spec_rad/2016_2020_Spec_rad_Hourly.csv") %>% 
-  mutate(date = dmy_hm(date)) %>% 
+spec_rad_historic = read.csv("data/spec_rad/Spec_rad_Hourly_timestamp_adj.csv") %>% 
   clean_names() %>% 
-  mutate(jhono = ifelse(is.na(j_hono),jhono_calc,j_hono),
-         jhno3 = ifelse(is.na(j_hno3),jhno3_calc,j_hno3)) %>% 
-  select(date,jhono,jhno3)
+  select(-date) %>% 
+  mutate(date = dmy_hm(new_date)) %>% 
+  select(date,jhono = j_hono,jhno3 = j_hno3)
 
 #fill NAs with averages from hours where spec rad data is missing when reading data in
-spec_rad_to_fix = bind_rows(spec_rad15,spec_rad_historic,spec_rad23) %>% 
+spec_rad_to_fix = bind_rows(spec_rad15,spec_rad_historic) %>% 
   mutate(hour = hour(date))
 
 #find average jhono and jhno3 values for each hour
@@ -66,12 +71,57 @@ spec_rad_mean = spec_rad_to_fix %>%
             jhno3_avg = mean(jhno3,na.rm = T))
 
 #replace NAs with average value for that hour
-spec_rad = left_join(spec_rad_to_fix,spec_rad_mean,by = "hour") %>% 
+spec_rad_old_corr = left_join(spec_rad_to_fix,spec_rad_mean,by = "hour") %>% 
   mutate(jhono = ifelse(is.na(jhono),jhono_avg,jhono),
          jhno3 = ifelse(is.na(jhno3),jhno3_avg,jhno3)) %>% 
   select(-c(jhono_avg,jhno3_avg))
 
-remove(spec_rad_historic,spec_rad_mean,spec_rad_to_fix,spec_rad15,spec_rad23)
+remove(spec_rad_historic,spec_rad_mean,spec_rad_to_fix,spec_rad15)
+
+
+# Spec rad 2023 -----------------------------------------------------------
+
+#doing this operation independently for each spec rad dataset because I don't want the data to be
+#a result of averages over different years and months
+
+#removing spec rad data from 12th and 20th Feb because it looks off, replacing it with an average
+#for these days - may come back and scrutinise this decision later
+spec_rad23 = read.csv("data/spec_rad/Specrad_hour_23_with_calc.csv") %>% 
+  mutate(date = dmy_hm(date),
+         date = date + 3600,
+         hour = hour(date),
+         doy = yday(date)) %>% 
+  filter(date >= "2023-02-07 08:35" & date < "2023-02-27") %>% 
+  clean_names() %>% 
+  mutate(jhono = case_when(is.na(j_hono) ~ jhono_calc,
+                           doy == 43 ~ NA_real_,
+                           doy == 51 ~ NA_real_,
+                           TRUE ~ j_hono),
+         jhno3 = case_when(is.na(j_hno3) ~ jhno3_calc,
+                           doy == 43 ~ NA_real_,
+                           doy == 51 ~ NA_real_,
+                           TRUE ~ j_hno3)) %>% 
+select(date,hour,jhono,jhno3)
+
+#fill NAs with averages from hours where spec rad data is missing when reading data in
+#find average jhono and jhno3 values for each hour
+spec_rad_mean = spec_rad23 %>% 
+  group_by(hour) %>% 
+  summarise(jhono_avg = mean(jhono,na.rm = T),
+            jhno3_avg = mean(jhno3,na.rm = T))
+
+#replace NAs with average value for that hour
+spec_rad23_corr = left_join(spec_rad23,spec_rad_mean,by = "hour") %>% 
+  mutate(jhono = ifelse(is.na(jhono),jhono_avg,jhono),
+         jhno3 = ifelse(is.na(jhno3),jhno3_avg,jhno3),
+         date = date + 3600, #changing data to utc
+         ) %>% 
+  select(-c(jhono_avg,jhno3_avg))
+
+spec_rad = bind_rows(spec_rad_old_corr,spec_rad23_corr) %>% 
+  arrange(date)
+
+remove(spec_rad_mean,spec_rad_old_corr,spec_rad23,spec_rad23_corr)
 
 # Met data ----------------------------------------------------------------
 
@@ -142,8 +192,8 @@ hono20 = read.csv("data/roberto_data/lopap_feb2020.csv") %>%
          hono = ifelse(sus_flag == 1,NA_real_,hono.ppt)) %>% 
   select(date,hono)
 
-#5 min average
-hono23 = read.csv("output/data/hono23.csv") %>% 
+#5 min average, data already in utc
+hono23 = read.csv("output/data/hono23_utc.csv") %>% 
   mutate(date = ymd_hms(date)) %>% 
   select(date,hono)
 
@@ -169,7 +219,7 @@ dat = df_list %>% reduce(full_join,by = "date") %>%
                              campaign == "February 2023" ~ 1.20 * 10^10,
                              TRUE ~ (nitrate* 10^-12 *6.022 * 10^23)/62.004))#molecules cm-3
 
-write.csv(dat,"output/data/all_data2.csv",row.names = F)
+write.csv(dat,"output/data/all_data_utc.csv",row.names = F)
 
 # nitrate_dat %>% 
 #   filter(date > "2015-11-23" & date < "2015-12-03 19:00") %>% 

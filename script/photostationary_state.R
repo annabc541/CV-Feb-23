@@ -10,7 +10,7 @@ library(viridis)
 kp = 3.3 * 10^-11 #rate constant for oh + no -> hono (from Atkinson et al. 2004)
 kl = 6 * 10^-12 #rate constant for oh + hono -> h2o + no2 (from Atkinson et al. 2004)
 dv = 0.3 #deardfroff velocity, value used by Simone
-# nitrate = 1.20 * 10^10 #constant value until more recent measurements are received from TROPOS
+nitrate = 1.20 * 10^10 #constant value until more recent measurements are received from TROPOS
 
 #read in full data (data joined in creating_master_df)
 #all_data2 has the correction for spec_rad timezone applied for 2023
@@ -86,10 +86,10 @@ pss_calc = dat %>%
                          / (2.46 * 10^19 * 10^-12)))
 
 pss_calc %>% 
-  filter(campaign != "no campaign") %>%
+  filter(campaign == "February 2023") %>%
   rename('PSS' = pss,
          'Observed' = hono) %>%
-  pivot_longer(c('PSS','Observed')) %>%
+  pivot_longer(c('PSS','Observed',jhono,jhno3)) %>%
   ggplot(aes(date,value,col = name)) +
   theme_bw() +
   labs(x = "Datetime (UTC)",
@@ -98,10 +98,10 @@ pss_calc %>%
   geom_path(size = 0.8) +
   theme(legend.position = "top") +
   scale_x_datetime(breaks = "1 day",date_labels = "%d/%m") +
-  facet_wrap(~factor(campaign,levels = c("November 2015","August 2019","February 2020","February 2023")),
-             scales = "free_x",ncol = 1) +
+  # facet_wrap(~factor(campaign,levels = c("November 2015","August 2019","February 2020","February 2023")),
+  #            scales = "free_x",ncol = 1) +
   scale_color_viridis_d() +
-  # facet_grid(rows = vars(name)) +
+  facet_grid(rows = vars(name),scales = "free") +
   # facet_wrap(vars(campaign),scales = "free", ncol =1) +
   NULL
 
@@ -118,8 +118,12 @@ ggsave('fcalc_dep_vel.svg',
 diurnal = pss_calc %>% 
   filter(campaign == "February 2023",
          is.na(hono) == FALSE) %>% 
+  mutate(hono = min_max_norm(hono),
+         pss = min_max_norm(pss),
+         jhono = min_max_norm(jhono),
+         jhno3 = min_max_norm(jhno3)) %>% 
   rename(HONO = hono,PSS = pss) %>% 
-  timeVariation(pollutant = c("HONO",'PSS'))
+  timeVariation(pollutant = c("HONO",'PSS',"jhono","jhno3"))
 
 diurnal_dat = diurnal$data$hour
 
@@ -131,8 +135,9 @@ diurnal_dat %>%
   labs(x = "Hour of day (UTC)",
        y = "HONO (ppt)",
        color = NULL) +
-  scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
-  ylim(-1.5,13) + #in order to have same sized axes for diurnals for all three campaigns
+  scale_x_continuous(breaks = c(0:23)) +
+  # facet_grid(rows = vars(variable),scales = "free") +
+  # ylim(-1.5,13) + #in order to have same sized axes for diurnals for all three campaigns
   theme(legend.position = "top")
 
 ggsave('pss23.svg',
@@ -147,26 +152,35 @@ ggsave('pss23.svg',
 #importing all the data individually and then creating one dataframe - data is averaged to 15 minutes
 #interpolation for spec rad data as it is hourly
 
-spec_rad = read.csv("data/Specrad_hour_23_with_calc.csv") %>% 
+spec_rad23 = read.csv("data/spec_rad/Specrad_hour_23_with_calc.csv") %>% 
   mutate(date = dmy_hm(date),
-         hour = hour(date)) %>% 
+         hour = hour(date),
+         doy = yday(date)) %>% 
+  filter(date >= "2023-02-07 08:35" & date < "2023-02-27") %>% 
   clean_names() %>% 
-  mutate(jhono = ifelse(is.na(j_hono),jhono_calc,j_hono),
-         jhno3 = ifelse(is.na(j_hno3),jhno3_calc,j_hno3)) %>% 
+  mutate(jhono = case_when(is.na(j_hono) ~ jhono_calc,
+                           doy == 43 ~ NA_real_,
+                           doy == 51 ~ NA_real_,
+                           TRUE ~ j_hono),
+         jhno3 = case_when(is.na(j_hno3) ~ jhno3_calc,
+                           doy == 43 ~ NA_real_,
+                           doy == 51 ~ NA_real_,
+                           TRUE ~ j_hno3)) %>% 
   select(date,hour,jhono,jhno3)
 
-#to remove NAs in jhono and jhno3 values
-
+#fill NAs with averages from hours where spec rad data is missing when reading data in
 #find average jhono and jhno3 values for each hour
-spec_rad_mean = spec_rad %>% 
+spec_rad_mean = spec_rad23 %>% 
   group_by(hour) %>% 
   summarise(jhono_avg = mean(jhono,na.rm = T),
             jhno3_avg = mean(jhno3,na.rm = T))
 
 #replace NAs with average value for that hour
-spec_rad_full = left_join(spec_rad,spec_rad_mean,by = "hour") %>% 
+spec_rad23_corr = left_join(spec_rad23,spec_rad_mean,by = "hour") %>% 
   mutate(jhono = ifelse(is.na(jhono),jhono_avg,jhono),
-         jhno3 = ifelse(is.na(jhno3),jhno3_avg,jhno3)) %>% 
+         jhno3 = ifelse(is.na(jhno3),jhno3_avg,jhno3),
+         date = date + 3600, #changing data to utc
+  ) %>% 
   select(-c(jhono_avg,jhno3_avg)) %>% 
   timeAverage("15 min") %>% 
   mutate(jhono = na.approx(jhono,na.rm = FALSE),
@@ -185,13 +199,12 @@ nox_dat = read.csv("data/nox_data/nox23.csv") %>%
   select(date,no = NO_Conc_art_corrected) %>%  
   timeAverage("15 min")
 
-hono_dat = read.csv("output/data/processed_in_r2.csv") %>% 
-  mutate(date = dmy_hms(date)) %>% 
+hono_dat = read.csv("output/data/hono23.csv") %>% 
+  mutate(date = ymd_hms(date)) %>% 
   select(date,hono) %>% 
   timeAverage("15 min")
 
-df_list = list(nox_dat,oh_dat,hono_dat,spec_rad_full)
-
+df_list = list(nox_dat,oh_dat,hono_dat,spec_rad23_corr)
 
 dat = df_list %>% reduce(full_join,by = "date") %>% arrange(date) %>% 
   filter(date > "2023-02-07 08:35",
@@ -205,7 +218,7 @@ pss_calc = dat %>%
          h = lifetime * dv,
          kdep1 = 0.01/h,
          no_molecules = no * 2.46 * 10^19 * 10^-12,
-         pss = ((kp*oh*no_molecules + (jhno3 * nitrate * 58)) / (jhono + (kl*oh) + kdep1))
+         pss = ((kp*oh*no_molecules + (jhno3 * nitrate * 62)) / (jhono + (kl*oh) + kdep1))
                          / (2.46 * 10^19 * 10^-12))
 
 diurnal = pss_calc %>% 
@@ -214,21 +227,23 @@ diurnal = pss_calc %>%
          hour = hour + (minute/60)) %>% 
   group_by(hour) %>% 
   summarise(hono = mean(hono,na.rm = TRUE),
-            pss = mean(pss,na.rm = TRUE)) %>% 
+            pss = mean(pss,na.rm = TRUE),
+            jhono = mean(jhono,na.rm = TRUE),
+            jhno3 = mean(jhno3,na.rm = TRUE)) %>% 
   ungroup()
 
 diurnal %>% 
   rename(HONO = hono,PSS = pss) %>% 
-  pivot_longer(c(HONO,PSS)) %>% 
+  pivot_longer(c(HONO,PSS,jhono,jhno3)) %>% 
   ggplot(aes(hour,value,col = name)) +
   geom_line(size = 1) +
-  scale_color_manual(values = viridis(2)) +
+  scale_color_viridis_d() +
   theme_bw() +
   labs(x = "Hour of day (UTC)",
        y = "HONO (ppt)",
        color = NULL) +
-  scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
-  ylim(-1.5,12) + #in order to have same sized axes for diurnals for all three campaigns
+  scale_x_continuous(breaks = c(0:23)) +
+  facet_grid(rows = vars(name),scales = "free")
   theme(legend.position = "top")
 
 ggsave('15min_diurnal_hono_pss.svg',
