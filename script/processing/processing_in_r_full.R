@@ -7,6 +7,8 @@ Sys.setenv(TZ = "UTC")
 
 #the only thing that is not processed in r is the time correction
 
+rel_error = 10 #set at 10%, conservative value
+
 # Functions ----------------------------------------------------------------
 
 tidy_rle = function(rleObj){
@@ -25,6 +27,12 @@ tidy_rle = function(rleObj){
 ppt <- function(ch1,ch2,se){
   
   x = (ch1/se) - (ch2-ch1*(1-se))
+  return(x)
+}
+
+lod <- function(ch1_zero_2sd,ch2_zero_2sd,slope_cal1,slope_cal2){
+  
+  x = ((ch1_zero_2sd*slope_cal1)^2+(ch2_zero_2sd*slope_cal2)^2)^0.5
   return(x)
 }
 
@@ -115,6 +123,8 @@ zero_avg = zeroes_grouped %>%
   group_by(id) %>% 
   summarise(ch1_zeroes = mean(ch1),
             ch2_zeroes = mean(ch2),
+            ch1_zero_2sd = 2 * sd(ch1),
+            ch2_zero_2sd = 2 * sd(ch2),
             idx = mean(idx)) %>% 
   ungroup() %>% 
   mutate(idx = round(idx))
@@ -126,6 +136,7 @@ zeroed = zero_flag %>%
   mutate(ch1_zeroes = na.approx(ch1_zeroes,na.rm = F),
          ch2_zeroes = na.approx(ch2_zeroes,na.rm = F)) %>% 
   fill(ch1_zeroes,ch2_zeroes,.direction = "up") %>% 
+  fill(ch1_zero_2sd,ch2_zero_2sd,.direction = "updown") %>% 
   mutate(ch1_zeroed = ch1 - ch1_zeroes,
          ch2_zeroed = ch2 - ch2_zeroes)
 
@@ -173,6 +184,8 @@ dat1_calibrated = zeroed %>%
   mutate(ch1_ppt = ch1_zeroed * slope_cal1,
          ch2_ppt = ch2_zeroed * slope_cal2,
          hono = ppt(ch1_ppt,ch2_ppt,sampling_efficiency),
+         hono_lod = lod(ch1_zero_2sd,ch2_zero_2sd,slope_cal1,slope_cal2),
+         hono_err = abs(hono * rel_error/100 + hono_lod),
          date = date - time_corr,
          flag = case_when(date < "2023-02-10 11:25" ~ 1,
                           between(date,as.POSIXct("2023-02-10 12:29"),as.POSIXct("2023-02-10 13:18")) ~ 2,
@@ -262,8 +275,9 @@ despiked_dat = despiking %>%
 processed_dat1 = despiked_dat %>% 
   ungroup() %>% 
   mutate(hono = ifelse(instrumental_noise_flag == 1, NA_real_,hono),
-         measuring_conditions = "Reagents 1, cal 2") %>% 
-  select(date,hono,flag,measuring_conditions)
+         measuring_conditions = "Reagents 1, cal 2",
+         hono_err = ifelse(is.na(hono),NA_real_,hono_err)) %>% 
+  select(date,hono,hono_lod,hono_err,flag,measuring_conditions)
 
 # Zeroes r2 (za) ------------------------------------------------------------------
 
@@ -298,6 +312,8 @@ zero_avg = zeroes_grouped %>%
   group_by(id) %>% 
   summarise(ch1_zeroes = mean(ch1),
             ch2_zeroes = mean(ch2),
+            ch1_zero_2sd = 2 * sd(ch1),
+            ch2_zero_2sd = 2 * sd(ch2),
             idx = mean(idx)) %>% 
   ungroup() %>% 
   mutate(idx = round(idx))
@@ -309,6 +325,7 @@ za_zeroed = zero_flag %>%
   mutate(ch1_zeroes = na.approx(ch1_zeroes,na.rm = F),
          ch2_zeroes = na.approx(ch2_zeroes,na.rm = F)) %>% 
   fill(ch1_zeroes,ch2_zeroes,.direction = "up") %>% 
+  fill(ch1_zero_2sd,ch2_zero_2sd,.direction = "updown") %>% 
   mutate(ch1_zeroed = ch1 - ch1_zeroes,
          ch2_zeroed = ch2 - ch2_zeroes,
          measuring_conditions = "Reagents 2, ZA zeroes")
@@ -388,9 +405,60 @@ night_zeroed = night_zeroing %>%
   fill(ch1_zeroes,ch2_zeroes,.direction = "up") %>%
   mutate(ch1_zeroed = ifelse(date < "2023-02-24 08:41",ch1 - ch1_zeroes,ch1 - 0.04973971),
          ch2_zeroed = ifelse(date < "2023-02-24 08:41",ch2 - ch2_zeroes,ch2 - 0.04323023),
-         measuring_conditions = "Reagents 2, nighttime zeroes") %>% 
-  select(-c(id,idx))
+         measuring_conditions = "Reagents 2, nighttime zeroes")
 
+# ZA zeroes r2 (for error analysis) ---------------------------------------
+
+zeroing = night_zeroed %>% 
+  mutate(zeroing = case_when(between(date,as.POSIXct("2023-02-21 09:31"),as.POSIXct("2023-02-21 09:44")) ~ 1,
+                             between(date,as.POSIXct("2023-02-21 17:15"),as.POSIXct("2023-02-21 17:40")) ~ 1,#postcal
+                             between(date,as.POSIXct("2023-02-21 23:47:30"),as.POSIXct("2023-02-21 23:59")) ~ 1,
+                             between(date,as.POSIXct("2023-02-22 06:02"),as.POSIXct("2023-02-22 06:15")) ~ 1,
+                             between(date,as.POSIXct("2023-02-22 12:22"),as.POSIXct("2023-02-22 12:30:30")) ~ 1,
+                             between(date,as.POSIXct("2023-02-22 18:39"),as.POSIXct("2023-02-22 18:47")) ~ 1,
+                             between(date,as.POSIXct("2023-02-23 00:51"),as.POSIXct("2023-02-23 01:02")) ~ 1,
+                             between(date,as.POSIXct("2023-02-23 07:07"),as.POSIXct("2023-02-23 07:18")) ~ 1,
+                             between(date,as.POSIXct("2023-02-23 13:25"),as.POSIXct("2023-02-23 13:35")) ~ 1,
+                             between(date,as.POSIXct("2023-02-23 19:42"),as.POSIXct("2023-02-23 19:52")) ~ 1,
+                             between(date,as.POSIXct("2023-02-24 01:57"),as.POSIXct("2023-02-24 02:05")) ~ 1,
+                             between(date,as.POSIXct("2023-02-24 08:11"),as.POSIXct("2023-02-24 08:22")) ~ 1, #cleaned inlet and messed around with liquid pump after this zero
+                             between(date,as.POSIXct("2023-02-24 14:32"),as.POSIXct("2023-02-24 14:38")) ~ 1,
+                             between(date,as.POSIXct("2023-02-24 20:40"),as.POSIXct("2023-02-24 20:54")) ~ 1,
+                             between(date,as.POSIXct("2023-02-25 02:57"),as.POSIXct("2023-02-25 03:06")) ~ 1,
+                             between(date,as.POSIXct("2023-02-25 09:10"),as.POSIXct("2023-02-25 09:16")) ~ 1,
+                             # between(date,as.POSIXct("2023-02-26 16:32"),as.POSIXct("2023-02-26 16:45")) ~ 1, #remove 26th?
+                             TRUE ~ 0))
+
+#creates a group for each zero and maintains row no. of main df so can easily left_join
+zeroing = rle(zero_flag$zeroing) %>%
+  tidy_rle() %>% 
+  filter(values == 1) %>% 
+  mutate(id = 1:nrow(.)) %>% 
+  as.list() %>% 
+  purrr::pmap_df(~data.frame(idx = ..3:..4,id = ..5)) %>% 
+  tibble() 
+
+#join dfs with groups for each zero
+zeroes_grouped = zero_flag %>% 
+  mutate(idx = 1:nrow(.)) %>% 
+  left_join(zeroing, "idx") %>% #joins two dfs by their row number
+  mutate(id = ifelse(is.na(id), 0, id)) #makes id (group) = 0 when not zeroing
+
+#average zero value for each group
+zero_avg = zeroes_grouped %>% 
+  filter(id != 0) %>%
+  group_by(id) %>% 
+  summarise(ch1_zero_2sd = 2 * sd(ch1),
+            ch2_zero_2sd = 2 * sd(ch2),
+            idx = mean(idx)) %>% 
+  ungroup() %>% 
+  mutate(idx = round(idx))
+
+#interpolate between zeroes and subtract zeroes from measurements
+night_zeroed_sd = night_zeroed %>%
+  left_join(zero_avg,by = "idx") %>%
+  fill(ch1_zero_2sd,ch2_zero_2sd,.direction = "updown") %>% 
+  select(-c(idx,id.x,id.y))
 
 # Calibration r2 -------------------------------------------------------------
 
@@ -402,7 +470,7 @@ conc_cal = 1000/100000 #standard conc / dilution factor
 hono_cal_conc_ch1 = conc_cal/1000 * liquid_flow1/1000 /46*6.022*10^23/(2.46*10^19* actual_gas_flow) * 10^12
 hono_cal_conc_ch2 = conc_cal/1000 * liquid_flow2/1000 /46*6.022*10^23/(2.46*10^19* actual_gas_flow) * 10^12
 
-zeroed = bind_rows(za_zeroed,night_zeroed)
+zeroed = bind_rows(za_zeroed,night_zeroed_sd)
 
 cal = zeroed %>% 
   select(date,ch1_zeroed,ch2_zeroed)  %>% 
@@ -438,6 +506,8 @@ dat2_calibrated = zeroed %>%
   mutate(ch1_ppt = ch1_zeroed * slope_cal1,
          ch2_ppt = ch2_zeroed * slope_cal2,
          hono = ppt(ch1_ppt,ch2_ppt,sampling_efficiency),
+         hono_lod = lod(ch1_zero_2sd,ch2_zero_2sd,slope_cal1,slope_cal2),
+         hono_err = abs(hono * rel_error/100 + hono_lod),
          date = date - time_corr,
          flag = (case_when(between(date,as.POSIXct("2023-02-17 08:30"),as.POSIXct("2023-02-17 18:12")) ~ 1, #changing reagents
                            between(date,as.POSIXct("2023-02-17 23:45"),as.POSIXct("2023-02-18 01:09")) ~ 2,
@@ -483,7 +553,8 @@ dat2_calibrated = zeroed %>%
 #   geom_point()
 
 processed_dat2 = dat2_calibrated %>%
-  select(date,hono,flag,measuring_conditions)
+  mutate(hono_err = ifelse(is.na(hono),NA_real_,hono_err)) %>% 
+  select(date,hono,hono_lod,hono_err,flag,measuring_conditions)
 
 # Zeroes r0.5 -------------------------------------------------------------
 
@@ -519,6 +590,8 @@ zero_avg = zeroes_grouped %>%
   group_by(id) %>% 
   summarise(ch1_zeroes = mean(ch1),
             ch2_zeroes = mean(ch2),
+            ch1_zero_2sd = 2 * sd(ch1),
+            ch2_zero_2sd = 2 * sd(ch2),
             idx = mean(idx)) %>% 
   ungroup() %>% 
   mutate(idx = round(idx))
@@ -529,7 +602,7 @@ zeroed = zero_flag %>%
   left_join(zero_avg) %>%
   mutate(ch1_zeroes = na.approx(ch1_zeroes,na.rm = F),
          ch2_zeroes = na.approx(ch2_zeroes,na.rm = F)) %>% 
-  fill(ch1_zeroes,ch2_zeroes,.direction = "updown") %>% 
+  fill(ch1_zeroes,ch2_zeroes,ch1_zero_2sd,ch2_zero_2sd,.direction = "updown") %>% 
   mutate(ch1_zeroed = ch1 - ch1_zeroes,
          ch2_zeroed = ch2 - ch2_zeroes)
 
@@ -579,6 +652,8 @@ dat3_calibrated = zeroed %>%
   mutate(ch1_ppt = ch1_zeroed * slope_cal1,
          ch2_ppt = ch2_zeroed * slope_cal2,
          hono = ppt(ch1_ppt,ch2_ppt,sampling_efficiency),
+         hono_lod = lod(ch1_zero_2sd,ch2_zero_2sd,slope_cal1,slope_cal2),
+         hono_err = abs(hono * rel_error/100 + hono_lod),
          date = date - time_corr,
          flag = case_when(date < "2023-02-07 10:00" ~ 5,#not sure why, just looks weird,zero in there somewhere
                           between(date,as.POSIXct("2023-02-07 15:20"),as.POSIXct("2023-02-07 16:05")) ~ 2,
@@ -640,7 +715,7 @@ processed_dat3 = despiked_dat %>%
   ungroup() %>% 
   mutate(hono = ifelse(instrumental_noise_flag == 1, NA_real_,hono),
          measuring_conditions = "Reagents 1, cal 1") %>% 
-  select(date,hono,flag,measuring_conditions)
+  select(date,hono,hono_lod,hono_err,flag,measuring_conditions)
 
 
 # Final data --------------------------------------------------------------
@@ -661,27 +736,55 @@ final_dat = bind_rows(processed_dat3,processed_dat1,processed_dat2) %>%
          flag = case_when(measuring_conditions == "Reagents 1, cal 1" ~ 1,
                           measuring_conditions == "Reagents 1, cal 2" ~ 0,
                           measuring_conditions == "Reagents 2, ZA zeroes" ~ 0,
-                          measuring_conditions == "Reagents 2, nighttime zeroes" ~ 2)) %>% 
-  select(date,hono,flag) %>%
+                          measuring_conditions == "Reagents 2, nighttime zeroes" ~ 2),
+         hono_err = ifelse(is.na(hono),NA_real_,hono_err)) %>% 
+  select(date,hono,hono_err,hono_lod,flag) %>%
   timeAverage("5 min")
 
-# final_dat %>% 
-#   mutate(doy = yday(date)) %>%  
-#   ggplot(aes(date,hono)) +
-#   theme_bw() +
-#   geom_path(size = 0.8) +
-#   labs(x = "Datetime (LT)",
-#        y = "HONO / ppt",
-#        col = NULL) +
-#   facet_wrap(vars(doy),scales = "free") +
-#   scale_x_datetime(date_breaks = "2 hours",date_labels = "%H") +
-#   scale_colour_viridis_d() +
-#   theme(legend.position = "top")
+final_dat %>%
+  # timeAverage("15 min") %>% 
+  # filter(date < "2023-02-08") %>% 
+  mutate(doy = yday(date)) %>%
+  ggplot(aes(date,hono)) +
+  theme_bw() +
+  geom_path(size = 0.8) +
+  geom_ribbon(aes(ymin=hono-hono_err, ymax=hono+hono_err),
+              alpha = 0.2) +
+  labs(x = "Datetime (UTC)",
+       y = "HONO / ppt",
+       col = NULL) +
+  # facet_wrap(vars(doy),scales = "free") +
+  # scale_x_datetime(date_breaks = "2 hours",date_labels = "%H") +
+  scale_colour_viridis_d() +
+  theme(legend.position = "top")
 
-write.csv(final_dat,"output/data/hono23_lt.csv",row.names = FALSE)
+write.csv(final_dat,"output/data/hono23_utc.csv",row.names = FALSE)
 
 # ggsave('hono23_timeseries.svg',
 #        path = "output/plots/hono23",
 #        width = 30,
 #        height = 12,
 #        units = 'cm')
+
+
+# Data to send to us epa --------------------------------------------------
+
+dat = final_dat %>% 
+  timeAverage("1 hour") %>% 
+  rename(date_utc = date,
+         hono_ppt = hono,
+         hono_err_ppt = hono_err,
+         hono_lod_ppt = hono_lod)
+
+dat %>%
+  ggplot(aes(date_utc,hono_ppt)) +
+  theme_bw() +
+  geom_path() +
+  geom_ribbon(aes(ymin=hono_ppt-hono_err_ppt, ymax=hono_ppt+hono_err_ppt),
+              alpha = 0.2) +
+  labs(x = "Datetime (UTC)",
+       y = "HONO / ppt",
+       col = NULL)
+
+
+write.csv(dat,"output/shared_data/hono_feb23.csv",row.names = FALSE)
