@@ -188,8 +188,8 @@ hono20 = read.csv("data/roberto_data/lopap_feb2020.csv") %>%
          hono = ifelse(sus_flag == 1,NA_real_,hono.ppt)) %>% 
   select(date,hono)
 
-#5 min average, data already in utc
-hono23 = read.csv("output/data/hono23_utc.csv") %>% 
+#hourly data for errors
+hono23 = read.csv("output/data/hono23_hourly_utc.csv") %>% 
   mutate(date = ymd_hms(date)) %>% 
   select(date,hono,hono_err)
 

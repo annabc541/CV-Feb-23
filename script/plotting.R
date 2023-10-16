@@ -9,7 +9,7 @@ Sys.setenv(TZ = 'UTC')
 
 #read in full data (data joined in creating_master_df)
 
-dat = read.csv("output/data/all_data.csv") %>% 
+dat = read.csv("output/data/all_data_utc.csv")
   mutate(date = ymd_hms(date))
 
 # Timeseries --------------------------------------------------------------

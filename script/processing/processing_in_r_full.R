@@ -54,6 +54,7 @@ remove(mfc_cal,model_mfc_cal,intercept_mfc,slope_mfc,gas_flow_set)
 # Reading in data ---------------------------------------------------------
 
 raw_dat1 = read.csv("data/raw_data/reagents1.csv") %>% 
+  tibble() %>% 
   mutate(date = glue::glue("{Date} {Time}"),
          date = ymd_hms(date)) %>% 
   arrange(date) %>% 
@@ -185,7 +186,7 @@ dat1_calibrated = zeroed %>%
          ch2_ppt = ch2_zeroed * slope_cal2,
          hono = ppt(ch1_ppt,ch2_ppt,sampling_efficiency),
          hono_lod = lod(ch1_zero_2sd,ch2_zero_2sd,slope_cal1,slope_cal2),
-         hono_err = abs(hono * rel_error/100 + hono_lod),
+         # hono_err = abs(hono * rel_error/100 + hono_lod),
          date = date - time_corr,
          flag = case_when(date < "2023-02-10 11:25" ~ 1,
                           between(date,as.POSIXct("2023-02-10 12:29"),as.POSIXct("2023-02-10 13:18")) ~ 2,
@@ -275,9 +276,8 @@ despiked_dat = despiking %>%
 processed_dat1 = despiked_dat %>% 
   ungroup() %>% 
   mutate(hono = ifelse(instrumental_noise_flag == 1, NA_real_,hono),
-         measuring_conditions = "Reagents 1, cal 2",
-         hono_err = ifelse(is.na(hono),NA_real_,hono_err)) %>% 
-  select(date,hono,hono_lod,hono_err,flag,measuring_conditions)
+         measuring_conditions = "Reagents 1, cal 2") %>% 
+  select(date,hono,hono_lod,flag,measuring_conditions)
 
 # Zeroes r2 (za) ------------------------------------------------------------------
 
@@ -507,7 +507,7 @@ dat2_calibrated = zeroed %>%
          ch2_ppt = ch2_zeroed * slope_cal2,
          hono = ppt(ch1_ppt,ch2_ppt,sampling_efficiency),
          hono_lod = lod(ch1_zero_2sd,ch2_zero_2sd,slope_cal1,slope_cal2),
-         hono_err = abs(hono * rel_error/100 + hono_lod),
+         # hono_err = abs(hono * rel_error/100 + hono_lod),
          date = date - time_corr,
          flag = (case_when(between(date,as.POSIXct("2023-02-17 08:30"),as.POSIXct("2023-02-17 18:12")) ~ 1, #changing reagents
                            between(date,as.POSIXct("2023-02-17 23:45"),as.POSIXct("2023-02-18 01:09")) ~ 2,
@@ -553,8 +553,7 @@ dat2_calibrated = zeroed %>%
 #   geom_point()
 
 processed_dat2 = dat2_calibrated %>%
-  mutate(hono_err = ifelse(is.na(hono),NA_real_,hono_err)) %>% 
-  select(date,hono,hono_lod,hono_err,flag,measuring_conditions)
+  select(date,hono,hono_lod,flag,measuring_conditions)
 
 # Zeroes r0.5 -------------------------------------------------------------
 
@@ -653,7 +652,7 @@ dat3_calibrated = zeroed %>%
          ch2_ppt = ch2_zeroed * slope_cal2,
          hono = ppt(ch1_ppt,ch2_ppt,sampling_efficiency),
          hono_lod = lod(ch1_zero_2sd,ch2_zero_2sd,slope_cal1,slope_cal2),
-         hono_err = abs(hono * rel_error/100 + hono_lod),
+         # hono_err = abs(hono * rel_error/100 + hono_lod),
          date = date - time_corr,
          flag = case_when(date < "2023-02-07 10:00" ~ 5,#not sure why, just looks weird,zero in there somewhere
                           between(date,as.POSIXct("2023-02-07 15:20"),as.POSIXct("2023-02-07 16:05")) ~ 2,
@@ -715,7 +714,7 @@ processed_dat3 = despiked_dat %>%
   ungroup() %>% 
   mutate(hono = ifelse(instrumental_noise_flag == 1, NA_real_,hono),
          measuring_conditions = "Reagents 1, cal 1") %>% 
-  select(date,hono,hono_lod,hono_err,flag,measuring_conditions)
+  select(date,hono,hono_lod,flag,measuring_conditions)
 
 
 # Final data --------------------------------------------------------------
@@ -736,14 +735,28 @@ final_dat = bind_rows(processed_dat3,processed_dat1,processed_dat2) %>%
          flag = case_when(measuring_conditions == "Reagents 1, cal 1" ~ 1,
                           measuring_conditions == "Reagents 1, cal 2" ~ 0,
                           measuring_conditions == "Reagents 2, ZA zeroes" ~ 0,
-                          measuring_conditions == "Reagents 2, nighttime zeroes" ~ 2),
-         hono_err = ifelse(is.na(hono),NA_real_,hono_err)) %>% 
-  select(date,hono,hono_err,hono_lod,flag) %>%
-  timeAverage("5 min")
+                          measuring_conditions == "Reagents 2, nighttime zeroes" ~ 2)) %>% 
+  select(date,hono,hono_lod,flag)
 
-final_dat %>%
-  # timeAverage("15 min") %>% 
-  # filter(date < "2023-02-08") %>% 
+final_dat_avg = final_dat %>% 
+  select(date,hono) %>% 
+  timeAverage("1 hour")
+
+final_dat_count = final_dat %>% 
+  select(date,hono_count = hono) %>% 
+  timeAverage("1 hour",statistic = "frequency")
+
+final_dat_sd = final_dat %>%  
+  select(date,hono_lod) %>% 
+  timeAverage("1 hour",statisitc = "sd")
+
+df_list = list(final_dat_avg,final_dat_count,final_dat_sd)
+
+final_dat_all = df_list %>% reduce(left_join,by = "date") %>% 
+  mutate(hono_err = abs(((2 * hono_lod) / hono_count^0.5) + rel_error/100 * hono))
+
+final_dat_all %>%
+  # filter(date < "2023-02-12") %>%
   mutate(doy = yday(date)) %>%
   ggplot(aes(date,hono)) +
   theme_bw() +
@@ -758,7 +771,8 @@ final_dat %>%
   scale_colour_viridis_d() +
   theme(legend.position = "top")
 
-write.csv(final_dat,"output/data/hono23_utc.csv",row.names = FALSE)
+#5 min average saved
+write.csv(final_dat_all,"output/data/hono23_hourly_utc.csv",row.names = FALSE)
 
 # ggsave('hono23_timeseries.svg',
 #        path = "output/plots/hono23",
@@ -767,24 +781,40 @@ write.csv(final_dat,"output/data/hono23_utc.csv",row.names = FALSE)
 #        units = 'cm')
 
 
-# Data to send to us epa --------------------------------------------------
-
-dat = final_dat %>% 
-  timeAverage("1 hour") %>% 
-  rename(date_utc = date,
-         hono_ppt = hono,
-         hono_err_ppt = hono_err,
-         hono_lod_ppt = hono_lod)
-
-dat %>%
-  ggplot(aes(date_utc,hono_ppt)) +
-  theme_bw() +
-  geom_path() +
-  geom_ribbon(aes(ymin=hono_ppt-hono_err_ppt, ymax=hono_ppt+hono_err_ppt),
-              alpha = 0.2) +
-  labs(x = "Datetime (UTC)",
-       y = "HONO / ppt",
-       col = NULL)
-
-
-write.csv(dat,"output/shared_data/hono_feb23.csv",row.names = FALSE)
+# # Data to send to us epa --------------------------------------------------
+# 
+# dat = final_dat %>%
+#   timeAverage("1 hour") %>%
+#   rename(date_utc = date,
+#          hono_ppt = hono,
+#          hono_err_ppt = hono_err,
+#          hono_lod_ppt = hono_lod)
+# 
+# dat %>%
+#   ggplot(aes(date_utc,hono_ppt)) +
+#   theme_bw() +
+#   geom_path() +
+#   geom_ribbon(aes(ymin=hono_ppt-hono_err_ppt, ymax=hono_ppt+hono_err_ppt),
+#               alpha = 0.2) +
+#   labs(x = "Datetime (UTC)",
+#        y = "HONO / ppt",
+#        col = NULL)
+# 
+# diurnal_dat = final_dat_all %>%
+#   mutate(hour = hour(date)) %>%
+#   group_by(hour) %>%
+#   summarise(diurnal_hono = mean(hono,na.rm = T),
+#             diurnal_hono_2sd = 2*sd(hono,na.rm = T))
+# 
+# diurnal_dat %>%
+#   ggplot(aes(hour,diurnal_hono)) +
+#   theme_bw() +
+#   geom_path() +
+#   geom_ribbon(aes(ymin=diurnal_hono-diurnal_hono_err, ymax=diurnal_hono+diurnal_hono_err),
+#               alpha = 0.2) +
+#   labs(x = "Datetime (UTC)",
+#        y = "HONO / ppt",
+#        col = NULL)
+# 
+# 
+# # write.csv(diurnal_dat,"output/shared_data/diurnal_hono_feb23.csv",row.names = FALSE)
