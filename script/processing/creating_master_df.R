@@ -42,7 +42,7 @@ oh_dat = read.csv("data/OH_provisional.csv") %>%
 spec_rad15 = read.csv("data/spec_rad/jrates_all_new_2015-2020.csv") %>% 
   clean_names() %>%
   mutate(date = dmy_hm(date)) %>% 
-  filter(date > "2015-11-23" & date < "2015-12-04") %>%
+  # filter(date > "2015-11-23" & date < "2015-12-04") %>%
   timeAverage("1 hour") %>% 
   select(date,jhono = jhono_calc,jhno3 = jhno3_calc)
 

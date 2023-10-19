@@ -11,6 +11,18 @@ Sys.setenv(TZ = 'UTC')
 #need to see when the difference between f_para and f_calc is statistically significant
 #need to determine correlation between aerosol composition and air masses
 
+
+# Functions ---------------------------------------------------------------
+
+lm_eqn <- function(df){
+  m <- lm(y ~ x, df);
+  eq <- substitute(italic(y) == a + b %.% italic(x)*","~~italic(r)^2~"="~r2, 
+                   list(a = format(unname(coef(m)[1]), digits = 2),
+                        b = format(unname(coef(m)[2]), digits = 2),
+                        r2 = format(summary(m)$r.squared, digits = 3)))
+  as.character(as.expression(eq));
+}
+
 # Constants ---------------------------------------------------------------
 
 kp = 3.3 * 10^-11 #rate constant for oh + no -> hono (from Atkinson et al. 2004)
@@ -26,7 +38,7 @@ og_dat15 = read.csv("data/aerosol_data/cv_data_2015.csv") %>%
   tibble() %>% 
   mutate(date = ymd_hms(date)) %>% 
   clean_names() %>% 
-  select(-c(no_ppt,no_lod_ppt,no_err_ppt,flag_no,no2_ppt,flag_met,flag_o3,flag_co,jo1d,jno2))
+  select(-c(no_ppt:jno2,flag_met,o3_std_ppb,co_std_ppb,flag_o3,flag_co))
 
 #getting oh, nox and air mass data from master df - nox data wrong in dataset above
 newer_dat15 = read.csv("output/data/all_data_utc.csv") %>% 
@@ -77,11 +89,10 @@ og_dat19 = read.csv("data/aerosol_data/cv_data_2019.csv") %>%
   tibble() %>% 
   mutate(date = ymd_hms(date)) %>% 
   clean_names() %>% 
-  select(date,hono_ppt,error_ppt,
-         uva_rad_wm2,press_hpa,rh,temp_c,wd,ws,
-         o3_mean_ppb,o3_std_ppb,co_mean_ppb,co_std_ppb,
-         jhono,jhno3,
-         mass_ug_m3,chloride_ug_m3,nitrate_ug_m3,sulfate_ug_m3,oxalate_ug_m3,msa_ug_m3,sodium_ug_m3,ammonium_ug_m3,potassium_ug_m3,magnesium_ug_m3,calcium_ug_m3,dp_um)
+  select(date:error_ppt,
+         uva_rad_wm2:ws,
+         o3_mean_ppb,co_mean_ppb,
+         jhono:calcium_ug_m3)
 
 #getting oh, nox and air mass data from master df - nox data wrong in dataset above
 newer_dat19 = read.csv("output/data/all_data_utc.csv") %>% 
@@ -117,28 +128,109 @@ f19 = final_dat19 %>%
          f_para = 10^5/((1+80.07*nitrate_ug_m3)*rh),
          ratio = f_calc/f_para) %>% 
   select(-nitrate_molecules)
+  
 
-# write.csv(f19,"output/data/f_parameterised19_all_data.csv",row.names = F)
-
-
+# write.csv(f19,"output/data/f_parameterised19.csv",row.names = F)
 
 # Joining data ------------------------------------------------------------
 
 dat = bind_rows(f15,f19)
 
-#when the ratio is above 1 the calculated f is larger than the parameterised f
+#when the ratio is above 1 the parameterised f is larger than the calculated f
 
 # Plotting ----------------------------------------------------------------
 
 #plotting ratio and various factors that could affect it
-dat %>% 
-  # filter(no2 < 40) %>%
-  mutate(year = as.character(year),
-         africa = sahel + sahara + west_africa + central_africa,
-         ocean = upwelling + north_atlantic + south_atlantic,
-         america = north_america,south_america) %>% 
-  ggplot(aes(europe,ratio,shape = year)) +
+dat %>%
+  filter(ratio > 1) %>% 
+  select(-c(central_africa,south_america)) %>% 
+  mutate(flag = case_when(ratio > all_mean + all_sd | ratio < all_mean - all_sd ~ "normal",
+                          TRUE ~ "extreme"),
+         continental = europe + north_america,
+         marine = north_atlantic + south_atlantic + upwelling,
+         african = sahara + sahel + west_africa) %>%
+  pivot_longer(c(upwelling:south_atlantic)) %>%
+  # pivot_longer(c(mass_ug_m3:calcium_ug_m3)) %>%
+  # ggplot(aes(hono_ppt,value,shape = as.character(year),col = name)) +
+  ggplot(aes(value,ratio,shape = as.character(year),col = flag)) +
   geom_point() +
-  scale_colour_viridis_c()
+  facet_wrap(~name,scales = "free") +
+  # scale_colour_viridis_c()+
+  labs(shape = NULL,
+       col = NULL,
+       x = NULL) +
+  theme(legend.position = "top")
 
+ggsave('air_masses_ratio.svg',
+       path = "output/plots/f/ratio",
+       width = 32,
+       height = 15.27,
+       units = 'cm')
 
+ll_mean = mean(dat$ratio,na.rm=T)
+all_sd = sd(dat$ratio,na.rm=T)
+mean15 = mean(f15$ratio,na.rm=T)
+sd15 = sd(f15$ratio,na.rm=T)
+mean19 = mean(f19$ratio,na.rm=T)
+sd19 = sd(f19$ratio,na.rm=T)
+
+test = dat %>% 
+  select(day,month,year,ratio) %>% 
+  mutate(flag = case_when(ratio < all_mean + all_sd & ratio > all_mean-all_sd ~ 0,
+                          TRUE ~ 1)) %>% 
+  filter(flag == 1)
+
+test %>% 
+  ggplot(aes(nitrate_ug_m3,ratio,shape = as.character(year),col = flag)) +
+  geom_point()
+  
+
+# Deep dive into days with ratios outside of the mean +- sigma ------------
+
+final_dat15 %>% 
+  # filter(date > "2015-12-02" & date < "2015-12-03") %>%
+  ggplot(aes(date,calcium_ug_m3)) +
+  geom_point() +
+  scale_x_datetime(date_breaks = "1 day",date_labels = "%d/%m/%y")
+
+f19 %>%  
+  mutate(index = 1:nrow(.),
+         flag = case_when(ratio < mean15 + sd15 & ratio > mean15-sd15 ~ "< mean +- sd",
+                                 TRUE ~ "> mean +- sd")) %>% 
+  pivot_longer(c(f_para,f_calc)) %>% 
+  ggplot(aes(sodium_ug_m3,ratio,col = sahara)) +
+  geom_point() +
+  scale_colour_viridis_c()+
+  labs(shape = NULL,
+       col = NULL) +
+  # theme(legend.position = "top") +
+  NULL
+
+ggsave('jhno3_15.svg',
+       path = "output/plots/f/ratio",
+       width = 30,
+       height = 12,
+       units = 'cm')
+
+# Correlation testing between ratio and other factors ---------------------
+
+shapiro.test(dat$hono_ppt)
+
+cor.test(dat$ratio,dat$hono_ppt,use = "complete.obs",method = "pearson")
+
+ggqqplot(dat$ratio)
+
+dat_cor = dat %>% 
+  filter(ratio > 1) %>% 
+  select(-c(day:year,lifetime:f_para,bromide_ug_m3,phosphate_ug_m3,fluoride_ug_m3,
+            error_ppt,south_america,central_africa,nitrate,dp_um,co_std_ppb,o3_std_ppb,ws,wd,co_mean_ppb)) %>% 
+  # select(hono_ppt,rh,jhono,jhno3,chloride_ug_m3,sulfate_ug_m3,ratio) %>% 
+  remove_constant()
+
+dat_cor1 = as.data.frame(cor(dat_cor[,colnames(dat_cor) != "ratio"],dat_cor$ratio,use = "complete.obs",method = "pearson"))
+
+cor(dat_cor$hono_ppt,dat_cor$ratio)
+
+dat_unique = dat %>% 
+  select(-c(day:year,uva_rad_wm2,o3_std_ppb,co_std_ppb,error_ppt,lifetime:f_para)) %>%
+  mutate(across(everything(),unique))
