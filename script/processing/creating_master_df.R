@@ -46,52 +46,19 @@ spec_rad15 = read.csv("data/spec_rad/jrates_all_new_2015-2020.csv") %>%
   timeAverage("1 hour") %>% 
   select(date,jhono = jhono_calc,jhno3 = jhno3_calc)
 
-# spec_rad23 = read.csv("data/spec_rad/Specrad_hour_23_with_calc.csv") %>% 
-#   mutate(date = dmy_hm(date),
-#          date = date + 3600) %>% #changing data to utc
-#   clean_names() %>% 
-#   mutate(jhono = ifelse(is.na(j_hono),jhono_calc,j_hono),
-#          jhno3 = ifelse(is.na(j_hno3),jhno3_calc,j_hno3)) %>% 
-#   select(date,jhono,jhno3)
-
-spec_rad_historic = read.csv("data/spec_rad/Spec_rad_Hourly_timestamp_adj.csv") %>% 
-  clean_names() %>%
-  select(-date) %>% 
-  mutate(date = dmy_hm(new_date)) %>% 
-  select(date,jhono = j_hono,jhno3 = j_hno3)
-
-#fill NAs with averages from hours where spec rad data is missing when reading data in
-spec_rad_to_fix = bind_rows(spec_rad15,spec_rad_historic) %>% 
-  mutate(hour = hour(date))
-
-#find average jhono and jhno3 values for each hour
-spec_rad_mean = spec_rad_to_fix %>% 
-  group_by(hour) %>% 
-  summarise(jhono_avg = mean(jhono,na.rm = T),
-            jhno3_avg = mean(jhno3,na.rm = T))
-
-#replace NAs with average value for that hour
-spec_rad_old_corr = left_join(spec_rad_to_fix,spec_rad_mean,by = "hour") %>% 
-  mutate(jhono = ifelse(is.na(jhono),jhono_avg,jhono),
-         jhno3 = ifelse(is.na(jhno3),jhno3_avg,jhno3)) %>% 
-  select(-c(jhono_avg,jhno3_avg))
-
-remove(spec_rad_historic,spec_rad_mean,spec_rad_to_fix,spec_rad15)
-
-
-# Spec rad 2023 -----------------------------------------------------------
-
-#doing this operation independently for each spec rad dataset because I don't want the data to be
-#a result of averages over different years and months
-
-#removing spec rad data from 12,20,22,23 Feb because it looks off, replacing it with an average
-#for these days - may come back and scrutinise this decision later
-#currently not using the calculated data because it looks a bit off I think?
-doy_list = list(43,51,53,54)
-
-spec_rad23 = read.csv("data/spec_rad/Specrad_hour_23_with_calc.csv") %>% 
+spec_rad1920 = read.csv("data/spec_rad/2016_2020_Spec_rad_Hourly.csv") %>% 
+  clean_names() %>% 
   mutate(date = dmy_hm(date),
-         date = date + 3600,
+         jhono = case_when(date > "2020-02-14 01:00" & date < "2020-02-26 02:56" ~ jhono_calc,
+                           is.na(j_hono) ~ jhono_calc,
+                           TRUE ~ j_hono),
+         jhno3 = case_when(date > "2020-02-14 01:00" & date < "2020-02-26 02:56" ~ jhno3_calc,
+                           is.na(j_hno3) ~ jhno3_calc,
+                           TRUE ~ j_hno3)) %>% 
+  select(date,jhono,jhno3)
+
+spec_rad23 = read.csv("data/spec_rad/Specrad_hour_23_with_calc_UPDATED.csv") %>% 
+  mutate(date = dmy_hm(date),
          hour = hour(date),
          doy = yday(date)) %>% 
   filter(date >= "2023-02-07 08:35" & date < "2023-02-27") %>% 
@@ -101,23 +68,24 @@ spec_rad23 = read.csv("data/spec_rad/Specrad_hour_23_with_calc.csv") %>%
   select(date,hour,jhono,jhno3)
 
 #fill NAs with averages from hours where spec rad data is missing when reading data in
+#should only be used for nighttime values, since calculated spec rad values are only for daytime
+#missing daytime values should be replaced by calculated values
+spec_rad_to_fix = bind_rows(spec_rad15,spec_rad1920,spec_rad23) %>% 
+  mutate(hour = hour(date))
+
 #find average jhono and jhno3 values for each hour
-spec_rad_mean = spec_rad23 %>% 
+spec_rad_mean = spec_rad_to_fix %>% 
   group_by(hour) %>% 
   summarise(jhono_avg = mean(jhono,na.rm = T),
             jhno3_avg = mean(jhno3,na.rm = T))
 
 #replace NAs with average value for that hour
-spec_rad23_corr = left_join(spec_rad23,spec_rad_mean,by = "hour") %>% 
+spec_rad = left_join(spec_rad_to_fix,spec_rad_mean,by = "hour") %>% 
   mutate(jhono = ifelse(is.na(jhono),jhono_avg,jhono),
-         jhno3 = ifelse(is.na(jhno3),jhno3_avg,jhno3),
-         ) %>% 
+         jhno3 = ifelse(is.na(jhno3),jhno3_avg,jhno3)) %>% 
   select(-c(jhono_avg,jhno3_avg))
 
-spec_rad = bind_rows(spec_rad_old_corr,spec_rad23_corr) %>% 
-  arrange(date)
-
-remove(spec_rad_mean,spec_rad_old_corr,spec_rad23,spec_rad23_corr)
+remove(spec_rad1920,spec_rad23,spec_rad_mean,spec_rad_to_fix,spec_rad15)
 
 # Met data ----------------------------------------------------------------
 
