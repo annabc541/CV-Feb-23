@@ -13,12 +13,11 @@ Sys.setenv(TZ = 'UTC')
 
 # Constants ---------------------------------------------------------------
 
-kp = 3.3 * 10^-11 #rate constant for oh + no -> hono (from Atkinson et al. 2004)
-kl = 6 * 10^-12 #rate constant for oh + hono -> h2o + no2 (from Atkinson et al. 2004)
-dv = 0.3 #deardroff velocity, value used by Simone
+kp = 3.3 * 10^-11 #rate constant for oh + no -> hono (from Atkinson et al. 2004) in cm3 molecule-1 s-1
+kl = 6 * 10^-12 #rate constant for oh + hono -> h2o + no2 (from Atkinson et al. 2004) in cm3 molecule-1 s-1
+dv = 0.3 #deardroff velocity, value used by Simone, in m s-1
 
-
-# November 2015 -----------------------------------------------------------
+# Reading in and tidying data ---------------------------------------------
 
 #dataset from Simone, who got it from Roberto (?),contains majority of info needed for 2015 f parameterisation
 #no data is different from current 2015 df - use more up to date data
@@ -45,36 +44,6 @@ final_dat15 = left_join(og_dat15,newer_dat15,by = "date") %>%
          month = month(date)) %>% 
   select(-c(jhono1,jhno31))
 
-#calculating daily calculated and parameterised f, using only daytime values
-f15 = final_dat15 %>%  
-  mutate() %>%
-  filter(hour >= 11 & hour <= 16) %>% #only looking at daytime values
-  mutate(lifetime = 1/jhono,
-         h = lifetime * dv,
-         kdep = 0.01/h,
-         nitrate_molecules = (nitrate_ug_m3 * 10^-12 *6.022 * 10^23)/62.004,
-         no_molecules = no * 2.46 * 10^19 * 10^-12,
-         production_without_nitrate = kp*oh*no_molecules,
-         loss = jhono + (kl*oh) + kdep,
-         loss_hono = loss * hono_ppt * 2.46 * 10^19 * 10^-12,
-         missing_production = loss_hono - production_without_nitrate) %>% 
-  group_by(day) %>%
-  summarise_all(mean,na.rm = T) %>% 
-  ungroup() %>% 
-  mutate(f_calc = missing_production/(nitrate_molecules * jhno3),
-         f_para = 10^5/((1+80.07*nitrate_ug_m3)*rh),
-         ratio_f = f_calc/f_para,
-         hono_para = ((kp*oh*no_molecules + (jhno3 * nitrate_molecules * f_para)) / (jhono + (kl*oh) + kdep))
-         / (2.46 * 10^19 * 10^-12),
-         ratio_hono = hono_ppt/hono_para) %>% 
-  select(date,hono_ppt,hono_para,nitrate_ug_m3,f_calc,f_para,ratio_f,ratio_hono,everything(),
-         -c(hour,no_molecules,nitrate_molecules)) %>% 
-  arrange(date)
-
-# write.csv(f15,"output/data/f_parameterised15_all_data.csv",row.names = F)
-
-# August 2019 -------------------------------------------------------------
-
 #dataset from Simone, who got it from Roberto (?),contains majority of info needed for 2019 f parameterisation
 og_dat19 = read.csv("data/aerosol_data/cv_data_2019.csv") %>% 
   tibble() %>% 
@@ -98,89 +67,55 @@ final_dat19 = left_join(newer_dat19,og_dat19,by = "date") %>%
          year = year(date),
          month = month(date))
 
-#calculating daily calculated and parameterised f
-f19 = final_dat19 %>%
+# Joining data and calculations -------------------------------------------
+
+#all calculations performed in molecules per cm3 and s-1
+dat = bind_rows(final_dat15,final_dat19) %>% 
+  rename(oh_m_cm3 = oh,no_ppt = no,no2_ppt = no2) %>% 
+  arrange(date) %>% 
   filter(hour >= 11 & hour <= 16) %>% #only looking at daytime values
   mutate(lifetime = 1/jhono,
          h = lifetime * dv,
          kdep = 0.01/h,
-         nitrate_molecules = (nitrate_ug_m3 * 10^-12 *6.022 * 10^23)/62.004,
-         no_molecules = no * 2.46 * 10^19 * 10^-12,
-         production_without_nitrate = kp*oh*no_molecules,
-         loss = jhono + (kl*oh) + kdep,
-         loss_hono = loss * hono_ppt * 2.46 * 10^19 * 10^-12,
-         missing_production = loss_hono - production_without_nitrate) %>% 
-  group_by(day) %>%
-  summarise_all(mean,na.rm = T) %>% 
-  ungroup() %>% 
-  mutate(f_calc = missing_production/(nitrate_molecules * jhno3),
+         nitrate_m_cm3 = (nitrate_ug_m3 * 10^-12 *6.022 * 10^23)/62.004,
+         production_without_nitrate = kp*oh_m_cm3*no_ppt * 2.46 * 10^19 * 10^-12,
+         loss = (jhono + (kl*oh_m_cm3) + kdep) * hono_ppt * 2.46 * 10^19 * 10^-12,
+         missing_production = (loss - production_without_nitrate), #molecule cm-3 s-1
+         f_calc = missing_production/(jhno3 * nitrate_m_cm3),
          f_para = 10^5/((1+80.07*nitrate_ug_m3)*rh),
          ratio_f = f_calc/f_para,
-         hono_para = ((kp*oh*no_molecules + (jhno3 * nitrate_molecules * f_para)) / (jhono + (kl*oh) + kdep))
-         / (2.46 * 10^19 * 10^-12),
+         hono_para = ((kp*oh_m_cm3*no_ppt * 2.46 * 10^19 * 10^-12 + (jhno3 * nitrate_m_cm3 * f_para)) / (jhono + (kl*oh_m_cm3) + kdep))
+         / (2.46 * 10^19 * 10^-12), #converts hono from molecules cm-3 s-1 to ppt
          ratio_hono = hono_ppt/hono_para) %>% 
-  select(date,hono_ppt,hono_para,nitrate_ug_m3,f_calc,f_para,ratio_f,ratio_hono,everything(),
-         -c(hour,no_molecules,nitrate_molecules)) %>% 
-  arrange(date)
+  timeAverage("1 day") %>%
+  filter(is.na(hono_ppt) == F) %>% 
+  select(date,year,hono_ppt,hono_para,nitrate_ug_m3,f_calc,f_para,ratio_f,ratio_hono,missing_production,everything(),
+         -c(hour,nitrate_m_cm3,uva_rad_wm2,press_hpa,dp_um,day,month:loss))
+
+#remove(final_dat15,final_dat19,newer_dat15,newer_dat19,og_dat15,og_dat19)
   
-
-# write.csv(f19,"output/data/f_parameterised19.csv",row.names = F)
-
-# Joining data ------------------------------------------------------------
-
-dat = bind_rows(f15,f19)
-
 # Missing HONO coloured by f ----------------------------------------------
 
-missing_dat = bind_rows(final_dat15,final_dat19)
+missing_hono = dat %>% 
+  mutate(missing_production = missing_production * 3600 /(2.46 * 10^19 * 10^-12), #in ppt per hour
+         jhno3 = jhno3 * 3600, #per hour
+         nitrate_ppt = nitrate_ug_m3 * 10^6/62.004 * 8.314*293.15/101325, #ppt
+         nitrate_jhno3 = jhno3 * nitrate_ppt)
 
-missing_hono = missing_dat %>%
-  filter(hour >= 11 & hour <= 16) %>% #only looking at daytime values
-  mutate(lifetime = 1/jhono,
-         h = lifetime * dv,
-         kdep = 0.01/h,
-         no_molecules = no * 2.46 * 10^19 * 10^-12,
-         nitrate_molecules = (nitrate_ug_m3 * 10^-12 *6.022 * 10^23)/62.004,
-         oh_ppt = oh/(2.46 * 10^19 * 10^-12),
-         production_without_nitrate = kp * oh_ppt * no * 3600,
-         loss = jhono + (kl * oh_ppt) + kdep,
-         loss_hono = loss * hono_ppt * 3600,
-         missing_production = loss_hono - production_without_nitrate,
-         nitrate_moles = nitrate_ug_m3 * 10^6/62.004,
-         nitrate_ppt = (nitrate_moles * 8.314*293.15)/101325,
-         jhno3_hr = jhno3 * 3600,
-         jhno3_nitrate = jhno3_hr * nitrate_ppt,
-         f_calc = missing_production/(jhno3_nitrate),
-         f_para = 10^5/((1+80.07*nitrate_ug_m3)*rh),
-         ratio_f = f_calc/f_para,
-         hono_para = ((kp*oh*no_molecules + (jhno3 * nitrate_molecules * f_para)) / (jhono + (kl*oh) + kdep))
-         / (2.46 * 10^19 * 10^-12),
-         ratio_hono = hono_ppt/hono_para) %>% 
-  select(date,hono_ppt,hono_para,nitrate_ug_m3,f_calc,f_para,ratio_f,ratio_hono,everything(),
-         -c(hour,no_molecules,nitrate_molecules)) %>% 
-  arrange(date)
-
-missing_hono %>% 
-  timeAverage("1 day") %>% 
-  filter(is.na(hono_ppt) == F) %>%
-  mutate(across(c(upwelling:south_atlantic), ~ na.approx(.x,na.rm =F)),
-         polluted_air = north_america+europe,
-         african_air = west_africa+sahara+upwelling+sahel+central_africa,
-         clean_air = north_atlantic+south_atlantic+upwelling,
-         jhno3 = jhno3 *10^3) %>%
-  ggplot(aes(ratio_f,ratio_hono)) +
-  geom_point(aes(col = as.character(year))) +
-  # geom_abline(slope = 1) +
-  # geom_smooth(method = "lm",se=F) +
-  # geom_text(aes(x = 0.75, y = 50, label = lm_eqn(missing_hono,jhno3,missing_production)), parse = TRUE) +
+missing_hono %>%
+  # mutate(across(c(upwelling:south_atlantic), ~ na.approx(.x,na.rm =F))) %>%
+  filter(is.na(hono_para) == F) %>%
+  ggplot(aes(nitrate_jhno3,missing_production,col = as.character(year))) +
+  geom_point() +
   theme_bw() +
+  # facet_wrap(~year) +
   theme(legend.position = "top") +
   labs(x = expression(j[HNO[3]]~"*"~nitrate~(ppt~"/"~hour)),
        y = "Missing HONO source (ppt/hour)",
-       colour = NULL) +
+       col = NULL) +
   scale_colour_viridis_d()
 
-ggsave('missing_hono_jhno3_nitrate.svg',
+ggsave('daily_missing_hono_jhno3_nitrate.svg',
        path = "output/plots/pss/missing_hono_jhno3",
        width = 30,
        height = 12,
@@ -189,25 +124,22 @@ ggsave('missing_hono_jhno3_nitrate.svg',
 # Looking at hono ---------------------------------------------------------
 
 dat %>% 
-  filter(is.na(hono_ppt) == F,
-         is.na(hono_para) == F) %>% 
+  filter(is.na(hono_para) == F) %>% 
   select(-c(central_africa,south_america,bromide_ug_m3,fluoride_ug_m3,phosphate_ug_m3)) %>%
   # pivot_longer(c(upwelling:south_atlantic)) %>%
-  # pivot_longer(c(chloride_ug_m3:calcium_ug_m3,nitrate_ug_m3)) %>%
+  pivot_longer(c(chloride_ug_m3:calcium_ug_m3,nitrate_ug_m3)) %>%
   # pivot_longer(c(hono_ppt,hono_para)) %>% 
-  # ggplot(aes(hono_ppt,value,shape = as.character(year),col = name)) +
-  ggplot(aes(north_atlantic,ratio_hono,col = magnesium_ug_m3)) +
+  ggplot(aes(value,ratio_hono,col = as.character(year))) +
   theme_bw() +
   # geom_abline(intercept = 0,slope = 1) +
   geom_point() +
   # geom_smooth(method = "lm",se=F) +
-  # facet_wrap(~name,scales="free") +
-  labs(shape = NULL,
-       # col = "RH (%)",
-       x = "North Atlantic air mass (%)",
+  facet_wrap(~name,scales = "free") +
+  labs(col = NULL,
+       x = "Concentratio (ug/m3)",
        y = "HONO ratio") +
-  # theme(legend.position = "top") +
-  scale_colour_viridis_c() +
+  theme(legend.position = "top") +
+  scale_colour_viridis_d() +
   # scale_shape_manual(values=c(2,3)) +
   NULL
 

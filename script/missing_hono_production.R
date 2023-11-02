@@ -55,64 +55,51 @@ dat %>%
 # Missing HONO and jhno3 --------------------------------------------------
 
 missing_hono = dat %>%   
+  rename(oh_m_cm3 = oh,no_ppt = no,no2_ppt = no2,hono_ppt = hono) %>% 
   filter(hour >= 11 & hour <= 16) %>%
   mutate(lifetime = 1/jhono,
          h = lifetime * dv,
          kdep = 0.01/h,
-         oh_ppt = oh/(2.46 * 10^19 * 10^-12),
-         production_without_nitrate = kp*oh_ppt*no*3600,
-         loss = jhono + (kl*oh_ppt) + kdep,
-         loss_hono = loss * hono*3600,
-         missing_production = loss_hono - production_without_nitrate,
-         nitrate_moles = nitrate_ug_m3 * 10^6/62.004,
-         nitrate_ppt = (nitrate_moles*8.314*293.15)/101325,
-         jhno3 = jhno3*3600,
-         jhno3_nitrate = jhno3 * nitrate_ppt)
+         nitrate_m_cm3 = (nitrate_ug_m3 * 10^-12 *6.022 * 10^23)/62.004,
+         production_without_nitrate = kp*oh_m_cm3*no_ppt * 2.46 * 10^19 * 10^-12,
+         loss = (jhono + (kl*oh_m_cm3) + kdep) * hono_ppt * 2.46 * 10^19 * 10^-12,
+         missing_production = (loss - production_without_nitrate),
+         missing_production = missing_production * 3600 /(2.46 * 10^19 * 10^-12), #in ppt per hour
+         jhno3 = jhno3 * 3600, #per hour
+         nitrate_ppt = nitrate_ug_m3 * 10^6/62.004 * 8.314*293.15/101325, #ppt
+         nitrate_jhno3 = jhno3 * nitrate_ppt)
 
 missing_hono %>% 
-  filter(campaign == "November 2015" | campaign == "August 2019",
-         is.na(hono) == F) %>%
+  filter(campaign != "no campaign",
+         is.na(hono_ppt) == F) %>%
   mutate(across(c(upwelling:south_atlantic), ~ na.approx(.x,na.rm =F)),
          polluted_air = north_america+europe,
          african_air = west_africa+sahara+upwelling+sahel+central_africa,
          clean_air = north_atlantic+south_atlantic+upwelling,
          jhno3 = jhno3 *10^3) %>%
-  ggplot(aes(jhno3_nitrate,missing_production,col = campaign)) +
+  ggplot(aes(jhno3,missing_production,col = campaign)) +
   geom_point() +
   # geom_abline(slope = 1) +
-  # geom_smooth(method = "lm",se=F) +
-  # geom_text(aes(x = 0.75, y = 50, label = lm_eqn(missing_hono,jhno3,missing_production)), parse = TRUE) +
+  geom_smooth(method = "lm",se=F) +
+  # geom_text(aes(x = 1.75, y = 50, label = lm_eqn(missing_hono,jhno3,missing_production)), parse = TRUE) +
   theme_bw() +
   theme(legend.position = "top") +
-  labs(x = expression(j[HNO[3]]~(ppt~"/"~hour)),
+  labs(x = expression(j[HNO[3]]~(10^{-3}~per~hour)),
        y = "Missing HONO source (ppt/hour)",
        colour = NULL) +
   scale_colour_viridis_d()
 
-ggsave('missing_hono_jhno3_1920.svg',
-       path = "output/plots/pss",
+ggsave('missing_hono_jhno3.svg',
+       path = "output/plots/pss/missing_hono_jhno3",
        width = 30,
        height = 12,
        units = 'cm')
 
 feb23 = missing_hono %>% 
-  filter(campaign == "February 2023") %>% 
-  mutate(jhno3 = jhno3*10^3*3600)
+  filter(campaign == "February 2023")
 
-feb20 = missing_hono %>% 
-  filter(campaign == "February 2020") %>% 
-  mutate(jhno3 = jhno3*10^3*3600)
+model = lm(missing_production ~ jhno3,feb23)
 
-aug19 = missing_hono %>% 
-  filter(campaign == "August 2019") %>% 
-  mutate(jhno3 = jhno3*10^3*3600)
+lm(missing_production ~ jhno3,feb23)
 
-nov15 = missing_hono %>% 
-  filter(campaign == "November 2015") %>% 
-  mutate(jhno3 = jhno3*10^3*3600)
-
-model_nov15 = lm(missing_production ~ jhno3,nov15)
-
-lm(missing_production ~ jhno3,nov15)
-
-summary(model_nov15)
+summary(model)
