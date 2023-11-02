@@ -11,7 +11,7 @@ kp = 3.3 * 10^-11 #rate constant for oh + no -> hono (from Atkinson et al. 2004)
 kl = 6 * 10^-12 #rate constant for oh + hono -> h2o + no2 (from Atkinson et al. 2004)
 dv = 0.3 #deardroff velocity, value used by Simone
 nitrate = 1.20 * 10^10 #constant value until more recent measurements are received from TROPOS
-#for February 2023 f1 = 66 f3 = 70
+#for February 2023 f1 = 63 f3 = 70
 #for February 2020 f1 = 10 f3 = 11
 #for August 2019 f1 = 21 f3 = 22
 #for November 2015 f1 = 7 f3 = 8
@@ -19,43 +19,35 @@ nitrate = 1.20 * 10^10 #constant value until more recent measurements are receiv
 #read in full data (data joined in creating_master_df)
 
 dat = read.csv("output/data/all_data_utc.csv") %>% 
-  mutate(date = ymd_hms(date))
+  mutate(date = ymd_hms(date)) %>% 
+  fill(nitrate)
 
-# Calculating enhancement factor ------------------------------------------
 
-#The spec rad data for 2023 is not yet finalised, currently not using the calculated values for jhono
-#waiting for Katie to check them and calculate them again
+# Calculating "measured" f for each campaign ------------------------------
 
 #finding enhancement factor for different campaigns
 f_calc_all = dat %>%   
   filter(campaign == "February 2023",
          # date < "2020-02-26",
-         hour >= 11 & hour <= 16
-  ) %>%
+         hour >= 11 & hour <= 16) %>%
   mutate(lifetime = 1/jhono,
          h = lifetime * dv,
-         kdep1 = 0.01/h,
-         kdep3 = 0.03/h,
+         kdep = 0.01/h,
          no_molecules = no * 2.46 * 10^19 * 10^-12,
          production_without_nitrate = kp*oh*no_molecules,
-         loss1 = jhono + (kl*oh) + kdep1,
-         loss_hono1 = loss1 * hono * 2.46 * 10^19 * 10^-12,
-         loss3 = jhono + (kl*oh) + kdep3,
-         loss_hono3 = loss3 * hono * 2.46 * 10^19 * 10^-12,
-         missing_production1 = loss_hono1 - production_without_nitrate,
-         missing_production3 = loss_hono3 - production_without_nitrate)
+         loss = jhono + (kl*oh) + kdep,
+         loss_hono = loss * hono * 2.46 * 10^19 * 10^-12,
+         missing_production = loss_hono - production_without_nitrate)
 
 #finding f - daytime mean of missing production and jhno3 used
 #specifically between 10 and 15 local time - 11 and 16 UTC
 nitrate = mean(f_calc_all$nitrate,na.rm = TRUE)
 
-missing_production1 = mean(f_calc_all$missing_production1,na.rm = TRUE)
-missing_production3 = mean(f_calc_all$missing_production3,na.rm = TRUE)
+missing_production = mean(f_calc_all$missing_production,na.rm = TRUE)
 jhno3 = mean(f_calc_all$jhno3,na.rm = TRUE)
-f1 = missing_production1/(nitrate*jhno3)
-f3 = missing_production3/(nitrate*jhno3)
+f = missing_production/(nitrate*jhno3)
 
-# Photostationary state calculations --------------------------------------
+# PSS HONO with measured f ------------------------------------------------
 
 #hono = k[OH][NO]+ jHNO3 * f * pNO3 / jHONO + k[OH] + kdep
 
@@ -69,8 +61,7 @@ pss_calc = dat %>%
          lifetime = na.approx(lifetime,na.rm = FALSE),
          nitrate = na.approx(nitrate,na.rm = FALSE),
          h = lifetime * dv,
-         kdep1 = 0.01/h,
-         # kdep3 = 0.03/h,
+         kdep = 0.01/h,
          no_molecules = no * 2.46 * 10^19 * 10^-12,
          pss = case_when(campaign == "November 2015" ~ ((kp*oh*no_molecules + (jhno3 * nitrate * 7)) / (jhono + (kl*oh) + kdep1))
                          / (2.46 * 10^19 * 10^-12),
@@ -78,7 +69,7 @@ pss_calc = dat %>%
                          / (2.46 * 10^19 * 10^-12),
                          campaign == "February 2020" ~ ((kp*oh*no_molecules + (jhno3 * nitrate * 10)) / (jhono + (kl*oh) + kdep1))
                          / (2.46 * 10^19 * 10^-12),
-                         campaign == "February 2023" ~ ((kp*oh*no_molecules + (jhno3 * nitrate * f1)) / (jhono + (kl*oh) + kdep1))
+                         campaign == "February 2023" ~ ((kp*oh*no_molecules + (jhno3 * nitrate * 63)) / (jhono + (kl*oh) + kdep1))
                          / (2.46 * 10^19 * 10^-12)))
 
 pss_calc %>% 
@@ -99,12 +90,11 @@ pss_calc %>%
   scale_color_viridis_d() +
   NULL
 
-ggsave('pss_f66.svg',
-       path = "output/plots/pss/feb23",
-       width = 30,
-       height = 12,
-       units = 'cm')
-
+# ggsave('pss_f66.svg',
+#        path = "output/plots/pss/feb23",
+#        width = 30,
+#        height = 12,
+#        units = 'cm')
 
 # Diurnals ----------------------------------------------------------------
 
@@ -239,32 +229,40 @@ ggsave('15min_diurnal_hono_pss.svg',
 
 # Calculating daily enhancement factor ------------------------------------
 
-#finding f for each day of the campaign and seeing how it changes with air masses and aerosol composition (eventually)
+#looking at hourly missing production and f
 
-f_daily = dat %>% 
+f_hourly = dat %>% 
+  filter(campaign != "no campaign") %>%
   mutate(hour = hour(date),
-         day = day(date)) %>% 
-  filter(campaign == "February 2023",
-         hour >= 11 & hour <= 15) %>% 
+         day = day(date),
+         year = year(date)) %>% 
+  filter(hour >= 11 & hour <= 16) %>%
   mutate(lifetime = 1/jhono,
          h = lifetime * dv,
          kdep = 0.01/h,
-         no_molecules = no * 2.46 * 10^19 * 10^-12,
-         production_without_nitrate = kp*oh*no_molecules,
-         loss = jhono + (kl*oh) + kdep,
-         loss_hono = loss * hono * 2.46 * 10^19 * 10^-12,
-         missing_production = loss_hono - production_without_nitrate,
-         f = missing_production/(nitrate*jhno3)) %>% 
-  group_by(day) %>% 
-  summarise(f = mean(f,na.rm = TRUE),
-            hono = mean(hono,na.rm = TRUE),
-            sahara = mean(sahara,na.rm = TRUE))
+         oh_ppt = oh / (2.46 * 10^19 * 10^-12),
+         production_without_nitrate = kp*oh_ppt*no,
+         loss = jhono + (kl*oh_ppt) + kdep,
+         loss_hono = loss * hono,
+         missing_production = (loss_hono - production_without_nitrate) * 3600,
+         jhno3 = jhno3 * 3600 * 10^3,
+         nitrate = nitrate / (2.46 * 10^19 * 10^-12),
+         f = missing_production/(nitrate*jhno3 * 10^-3))
 
-f_daily %>% 
-  filter(is.na(f) == FALSE) %>% 
-  ggplot(aes(hono,f,col = sahara)) + 
+f_daily15 %>% 
+  ggplot(aes(jhno3,missing_production,col = campaign)) +
   geom_point() +
-  scale_colour_viridis()
+  scale_colour_viridis_d()+
+  labs(x = "jHNO3 (10-3 per hour)",
+       y = "Missing HONO source (ppt/hour)",
+       colour = NULL) +
+  theme(legend.position = "top")
+
+ggsave('hourly_missing_hono_jhno3.svg',
+       path = "output/plots",
+       width = 30,
+       height = 12,
+       units = 'cm')
 
 # Production and loss mechanisms ------------------------------------------
 

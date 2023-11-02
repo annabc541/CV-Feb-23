@@ -22,7 +22,7 @@ nitrate_dat = read.csv("data/aerosol_data/nitrate_ammonium_CVAO_12-19.csv") %>%
   mutate(date = mdy_hm(start_local_time),
          month = month(date),
          date = round_date(date, "6 hour")) %>% 
-  select(date,nitrate = nitrate_mg_m)
+  select(date,nitrate_ug_m3 = nitrate_mg_m)
 
 air_mass = read.csv("data/new_CVAO_sector_%_boxes_1.csv") %>% 
   rename(date = X) %>% 
@@ -179,9 +179,9 @@ dat = df_list %>% reduce(full_join,by = "date") %>%
                                date >= "2023-02-07 08:35" ~ "February 2023",
                                TRUE ~ "no campaign"),
          oh = ifelse(campaign != "February 2023",2 * 10^6,oh), #molecules cm-3
-         nitrate = case_when(campaign == "February 2020" ~ 1.20 * 10^10,
+         nitrate_molecules_cm3 = case_when(campaign == "February 2020" ~ 1.20 * 10^10,
                              campaign == "February 2023" ~ 1.20 * 10^10,
-                             TRUE ~ (nitrate* 10^-12 *6.022 * 10^23)/62.004))#molecules cm-3
+                             TRUE ~ (nitrate_ug_m3 * 10^-12 *6.022 * 10^23)/62.004))#molecules cm-3
 
 write.csv(dat,"output/data/all_data_utc.csv",row.names = F)
 

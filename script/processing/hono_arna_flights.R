@@ -15,7 +15,7 @@ for(index in 1:length(files)) {
 flight_dat = bind_rows(datList) %>% 
   mutate(date = ymd_hms(date))
 
-c206 = read.csv("data/arna_hono/from_simone/C206.csv") %>% 
+c206 = read.csv("C206.csv") %>% 
   clean_names() %>%
   mutate(date = ymd_hms(date))
 
