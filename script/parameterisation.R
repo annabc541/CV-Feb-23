@@ -105,15 +105,15 @@ missing_hono = dat %>%
 missing_hono %>%
   # mutate(across(c(upwelling:south_atlantic), ~ na.approx(.x,na.rm =F))) %>%
   filter(is.na(hono_para) == F) %>%
-  ggplot(aes(nitrate_jhno3,missing_production,col = as.character(year))) +
+  ggplot(aes(mass_ug_m3,missing_production,shape = as.character(year))) +
   geom_point() +
   theme_bw() +
   # facet_wrap(~year) +
-  theme(legend.position = "top") +
+  # theme(legend.position = "top") +
   labs(x = expression(j[HNO[3]]~"*"~nitrate~(ppt~"/"~hour)),
        y = "Missing HONO source (ppt/hour)",
-       col = NULL) +
-  scale_colour_viridis_d()
+       shape = NULL) +
+  scale_colour_viridis_c()
 
 ggsave('daily_missing_hono_jhno3_nitrate.svg',
        path = "output/plots/pss/missing_hono_jhno3",
@@ -127,18 +127,18 @@ dat %>%
   filter(is.na(hono_para) == F) %>% 
   select(-c(central_africa,south_america,bromide_ug_m3,fluoride_ug_m3,phosphate_ug_m3)) %>%
   # pivot_longer(c(upwelling:south_atlantic)) %>%
-  pivot_longer(c(chloride_ug_m3:calcium_ug_m3,nitrate_ug_m3)) %>%
+  # pivot_longer(c(mass_ug_m3:calcium_ug_m3,nitrate_ug_m3)) %>%
   # pivot_longer(c(hono_ppt,hono_para)) %>% 
-  ggplot(aes(value,ratio_hono,col = as.character(year))) +
+  ggplot(aes(mass_ug_m3,african,col = as.character(year))) +
   theme_bw() +
   # geom_abline(intercept = 0,slope = 1) +
   geom_point() +
   # geom_smooth(method = "lm",se=F) +
-  facet_wrap(~name,scales = "free") +
-  labs(col = NULL,
-       x = "Concentratio (ug/m3)",
-       y = "HONO ratio") +
-  theme(legend.position = "top") +
+  # facet_wrap(~name,scales = "free") +
+  # labs(shape = NULL,
+  #      # x = "Concentration (ug/m3)",
+  #      y = "HONO ratio") +
+  # theme(legend.position = "top") +
   scale_colour_viridis_d() +
   # scale_shape_manual(values=c(2,3)) +
   NULL

@@ -19,33 +19,24 @@ nitrate = 1.20 * 10^10 #constant value until more recent measurements are receiv
 #read in full data (data joined in creating_master_df)
 
 dat = read.csv("output/data/all_data_utc.csv") %>% 
-  mutate(date = ymd_hms(date)) %>% 
-  fill(nitrate)
-
+  mutate(date = ymd_hms(date))
 
 # Calculating "measured" f for each campaign ------------------------------
 
 #finding enhancement factor for different campaigns
 f_calc_all = dat %>%   
-  filter(campaign == "February 2023",
+  filter(campaign != "no campaign",
          # date < "2020-02-26",
          hour >= 11 & hour <= 16) %>%
   mutate(lifetime = 1/jhono,
          h = lifetime * dv,
          kdep = 0.01/h,
-         no_molecules = no * 2.46 * 10^19 * 10^-12,
-         production_without_nitrate = kp*oh*no_molecules,
-         loss = jhono + (kl*oh) + kdep,
-         loss_hono = loss * hono * 2.46 * 10^19 * 10^-12,
-         missing_production = loss_hono - production_without_nitrate)
+         production_without_nitrate = kp*oh*no * 2.46 * 10^19 * 10^-12,
+         loss = (jhono + (kl*oh) + kdep) * hono * 2.46 * 10^19 * 10^-12,
+         missing_production = (loss - production_without_nitrate),
+         f = missing_production/(nitrate_molecules_cm3*jhno3))
 
-#finding f - daytime mean of missing production and jhno3 used
-#specifically between 10 and 15 local time - 11 and 16 UTC
-nitrate = mean(f_calc_all$nitrate,na.rm = TRUE)
-
-missing_production = mean(f_calc_all$missing_production,na.rm = TRUE)
-jhno3 = mean(f_calc_all$jhno3,na.rm = TRUE)
-f = missing_production/(nitrate*jhno3)
+f = mean(f_calc_all$f,na.rm = T)
 
 # PSS HONO with measured f ------------------------------------------------
 
