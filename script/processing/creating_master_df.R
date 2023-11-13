@@ -15,7 +15,7 @@ Sys.setenv(TZ = 'UTC')
 #the three above sets of data are in LT rather than UTC
 #all other data is in UTC
 
-# Nitrate,air masses,OH ----------------------------------------------------
+# Nitrate, air masses, OH and spec rad ------------------------------------
 
 nitrate_dat = read.csv("data/aerosol_data/nitrate_ammonium_CVAO_12-19.csv") %>% 
   clean_names() %>%
@@ -36,56 +36,9 @@ oh_dat = read.csv("data/OH_provisional.csv") %>%
   select(date,oh) %>% 
   timeAverage("1 hour")
 
-# Spec rad ----------------------------------------------------------------
-
-#using calculated values rather than measured values because of weird cal (see presentation from Katie)
-spec_rad15 = read.csv("data/spec_rad/jrates_all_new_2015-2020.csv") %>% 
-  clean_names() %>%
-  mutate(date = dmy_hm(date)) %>% 
-  # filter(date > "2015-11-23" & date < "2015-12-04") %>%
-  timeAverage("1 hour") %>% 
-  select(date,jhono = jhono_calc,jhno3 = jhno3_calc)
-
-spec_rad1920 = read.csv("data/spec_rad/2016_2020_Spec_rad_Hourly.csv") %>% 
-  clean_names() %>% 
-  mutate(date = dmy_hm(date),
-         jhono = case_when(date > "2020-02-14 01:00" & date < "2020-02-26 02:56" ~ jhono_calc,
-                           is.na(j_hono) ~ jhono_calc,
-                           TRUE ~ j_hono),
-         jhno3 = case_when(date > "2020-02-14 01:00" & date < "2020-02-26 02:56" ~ jhno3_calc,
-                           is.na(j_hno3) ~ jhno3_calc,
-                           TRUE ~ j_hno3)) %>% 
-  select(date,jhono,jhno3)
-
-spec_rad23 = read.csv("data/spec_rad/Specrad_hour_23_with_calc_UPDATED.csv") %>% 
-  mutate(date = dmy_hm(date),
-         hour = hour(date),
-         doy = yday(date)) %>% 
-  filter(date >= "2023-02-07 08:35" & date < "2023-02-27") %>% 
-  clean_names() %>% 
-  mutate(jhono = ifelse(is.na(j_hono),jhono_calc,j_hono),
-         jhno3 = ifelse(is.na(j_hno3),jhno3_calc,j_hno3)) %>% 
-  select(date,hour,jhono,jhno3)
-
-#fill NAs with averages from hours where spec rad data is missing when reading data in
-#should only be used for nighttime values, since calculated spec rad values are only for daytime
-#missing daytime values should be replaced by calculated values
-spec_rad_to_fix = bind_rows(spec_rad15,spec_rad1920,spec_rad23) %>% 
-  mutate(hour = hour(date))
-
-#find average jhono and jhno3 values for each hour
-spec_rad_mean = spec_rad_to_fix %>% 
-  group_by(hour) %>% 
-  summarise(jhono_avg = mean(jhono,na.rm = T),
-            jhno3_avg = mean(jhno3,na.rm = T))
-
-#replace NAs with average value for that hour
-spec_rad = left_join(spec_rad_to_fix,spec_rad_mean,by = "hour") %>% 
-  mutate(jhono = ifelse(is.na(jhono),jhono_avg,jhono),
-         jhno3 = ifelse(is.na(jhno3),jhno3_avg,jhno3)) %>% 
-  select(-c(jhono_avg,jhno3_avg))
-
-remove(spec_rad1920,spec_rad23,spec_rad_mean,spec_rad_to_fix,spec_rad15)
+spec_rad = read.csv("data/spec_rad/spec_rad_processed.csv") %>% 
+  tibble() %>% 
+  mutate(date = ymd_hms(date))
 
 # Met data ----------------------------------------------------------------
 
@@ -101,7 +54,6 @@ met_data23 = read.csv("data/met_data/met2023.csv") %>%
 met_data = bind_rows(met_data_historic,met_data23)
 
 remove(met_data23,met_data_historic)
-
 
 # NOx data ----------------------------------------------------------------
 
@@ -183,7 +135,13 @@ dat = df_list %>% reduce(full_join,by = "date") %>%
                              campaign == "February 2023" ~ 1.20 * 10^10,
                              TRUE ~ (nitrate_ug_m3 * 10^-12 *6.022 * 10^23)/62.004))#molecules cm-3
 
-write.csv(dat,"output/data/all_data_utc.csv",row.names = F)
+dat %>% 
+  filter(campaign != "no campaign") %>% 
+  ggplot(aes(date,hono)) +
+  geom_path() +
+  facet_wrap(vars(campaign),ncol = 1,scales = "free_x")
+
+# write.csv(dat,"output/data/all_data_utc.csv",row.names = F)
 
 # nitrate_dat %>% 
 #   filter(date > "2015-11-23" & date < "2015-12-03 19:00") %>% 
