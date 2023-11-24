@@ -9,7 +9,7 @@ Sys.setenv(TZ = 'UTC')
 
 #read in full data (data joined in creating_master_df)
 
-dat = read.csv("output/data/all_data_utc.csv")
+dat = read.csv("output/data/all_data_utc.csv") %>% 
   mutate(date = ymd_hms(date))
 
 # Timeseries --------------------------------------------------------------
@@ -17,24 +17,25 @@ dat = read.csv("output/data/all_data_utc.csv")
 #plot data in facets colour coded by different parameters
 
 dat %>% 
-  filter(campaign != "no campaign") %>% 
+  filter(campaign != "no campaign",
+         campaign != "February 2020") %>% 
   mutate(sahara = na.approx(sahara,na.rm = F)) %>%
+  timeAverage("1 hour") %>% 
   # fill(sahara,.direction = "up") %>%
   ggplot(aes(date,hono)) +
   geom_path(size = 0.8) +
   scale_color_viridis() +
   labs(x = NULL,
-       y = "HONO (ppt)",
-       color = "Sahara %") +
+       y = "HONO (ppt)") +
   theme_bw() +
-  facet_wrap(~factor(campaign,levels = c("November 2015","August 2019","February 2020","February 2023")),
+  facet_wrap(~factor(campaign,levels = c("November 2015","August 2019","February 2023")),
              scales = "free",ncol = 1) +
   # theme(legend.position = "top") +
   scale_x_datetime(date_breaks = "1 day",date_labels = "%d/%m") +
   NULL
 
-ggsave('hono23_hourly.svg',
-       path = "output/plots/timeseries",
+ggsave('hono_timeseries.svg',
+       path = "output/plots/agu",
        width = 30,
        height = 12,
        units = 'cm')

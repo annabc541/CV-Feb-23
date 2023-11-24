@@ -24,6 +24,16 @@ nitrate_dat = read.csv("data/aerosol_data/nitrate_ammonium_CVAO_12-19.csv") %>%
          date = round_date(date, "6 hour")) %>% 
   select(date,nitrate_ug_m3 = nitrate_mg_m)
 
+nitrate_dat_ml = read.csv("data/aerosol_data/CVAO_Nitrate_Prediction_Feb2023.csv") %>% 
+  mutate(date = ymd(date)) %>% 
+  select(date,nitrate_ug_m3)
+
+all_nitrate = bind_rows(nitrate_dat,nitrate_dat_ml)
+
+all_nitrate %>% 
+  ggplot(aes(date,nitrate_ug_m3)) +
+  geom_point()
+
 air_mass = read.csv("data/new_CVAO_sector_%_boxes_1.csv") %>% 
   rename(date = X) %>% 
   mutate(date = ymd_hm(date)) %>% 
@@ -118,7 +128,7 @@ remove(hono15,hono19,hono20,hono23)
 
 # Joining data together ---------------------------------------------------
 
-df_list = list(hono,nox,oh_dat,nitrate_dat,spec_rad,met_data,air_mass)
+df_list = list(hono,nox,oh_dat,all_nitrate,spec_rad,met_data,air_mass)
 
 dat = df_list %>% reduce(full_join,by = "date") %>% 
   arrange(date) %>% 
@@ -136,11 +146,15 @@ dat = df_list %>% reduce(full_join,by = "date") %>%
                              TRUE ~ (nitrate_ug_m3 * 10^-12 *6.022 * 10^23)/62.004))#molecules cm-3
 
 dat %>% 
-  filter(campaign != "no campaign") %>% 
-  ggplot(aes(date,hono)) +
-  geom_path() +
-  facet_wrap(vars(campaign),ncol = 1,scales = "free_x")
+  filter(campaign != "no campaign",
+         campaign != "February 2020") %>% 
+  fill(nitrate_ug_m3,.direction = "updown") %>%
+  ggplot(aes(date,hono,col = nitrate_ug_m3)) +
+  geom_path(linewidth = 0.8) +
+  facet_wrap(vars(campaign),ncol = 1,scales = "free_x") +
+  scale_colour_viridis_c()
 
+#with nitrate from machine learning
 # write.csv(dat,"output/data/all_data_utc.csv",row.names = F)
 
 # nitrate_dat %>% 

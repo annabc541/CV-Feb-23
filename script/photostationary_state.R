@@ -34,9 +34,12 @@ f_calc_all = dat %>%
          production_without_nitrate = kp*oh*no * 2.46 * 10^19 * 10^-12,
          loss = (jhono + (kl*oh) + kdep) * hono * 2.46 * 10^19 * 10^-12,
          missing_production = (loss - production_without_nitrate),
-         f = missing_production/(nitrate_molecules_cm3*jhno3))
+         f_calc = missing_production/(nitrate_molecules_cm3*jhno3),
+         hono_calc = ((kp*oh*no * 2.46 * 10^19 * 10^-12 + (jhno3 * nitrate_molecules_cm3 * f_calc)) / (jhono + (kl*oh) + kdep))
+         / (2.46 * 10^19 * 10^-12))
 
 f = mean(f_calc_all$f,na.rm = T)
+
 
 # PSS HONO with measured f ------------------------------------------------
 
@@ -50,21 +53,21 @@ pss_calc = dat %>%
   mutate(hour = hour(date),
          lifetime = ifelse(hour >= 11 & hour <= 16,1/jhono,NA_real_),
          lifetime = na.approx(lifetime,na.rm = FALSE),
-         nitrate = na.approx(nitrate,na.rm = FALSE),
+         nitrate_molecules_cm3 = na.approx(nitrate_molecules_cm3,na.rm = FALSE),
          h = lifetime * dv,
          kdep = 0.01/h,
          no_molecules = no * 2.46 * 10^19 * 10^-12,
-         pss = case_when(campaign == "November 2015" ~ ((kp*oh*no_molecules + (jhno3 * nitrate * 7)) / (jhono + (kl*oh) + kdep1))
+         pss = case_when(campaign == "November 2015" ~ ((kp*oh*no_molecules + (jhno3 * nitrate_molecules_cm3 * 7)) / (jhono + (kl*oh) + kdep))
                          / (2.46 * 10^19 * 10^-12),
-                         campaign == "August 2019" ~ ((kp*oh*no_molecules + (jhno3 * nitrate * 21)) / (jhono + (kl*oh) + kdep1))
+                         campaign == "August 2019" ~ ((kp*oh*no_molecules + (jhno3 * nitrate_molecules_cm3 * 21)) / (jhono + (kl*oh) + kdep))
                          / (2.46 * 10^19 * 10^-12),
-                         campaign == "February 2020" ~ ((kp*oh*no_molecules + (jhno3 * nitrate * 10)) / (jhono + (kl*oh) + kdep1))
+                         campaign == "February 2020" ~ ((kp*oh*no_molecules + (jhno3 * nitrate_molecules_cm3 * 10)) / (jhono + (kl*oh) + kdep))
                          / (2.46 * 10^19 * 10^-12),
-                         campaign == "February 2023" ~ ((kp*oh*no_molecules + (jhno3 * nitrate * 63)) / (jhono + (kl*oh) + kdep1))
+                         campaign == "February 2023" ~ ((kp*oh*no_molecules + (jhno3 * nitrate_molecules_cm3 * 63)) / (jhono + (kl*oh) + kdep))
                          / (2.46 * 10^19 * 10^-12)))
 
 pss_calc %>% 
-  filter(campaign == "February 2023") %>%
+  filter(campaign == "November 2015") %>%
   rename('PSS' = pss,
          'Observed' = hono) %>%
   pivot_longer(c('PSS','Observed')) %>%

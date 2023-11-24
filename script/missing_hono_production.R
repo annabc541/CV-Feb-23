@@ -114,24 +114,28 @@ summary(model)
 # HONO/NO2 ratio ----------------------------------------------------------
 
 dat %>% 
-  filter(campaign == "November 2015") %>% 
+  filter(campaign != "February 2020",
+         campaign != "no campaign") %>%
   mutate(hono_no2 = hono/no2) %>% 
   # pivot_longer(c(hono,no2,hono_no2)) %>% 
   ggplot(aes(date,hono_no2,col = hono)) +
-  geom_path() +
+  geom_point() +
   scale_colour_viridis_c() +
-  # facet_grid(rows = vars(name),scales = "free") +
-  NULL
+  facet_wrap(~factor(campaign,levels = c("November 2015","August 2019","February 2023")),
+             scales = "free",ncol = 1) +
+  # theme(legend.position = "top") +
+  scale_x_datetime(date_breaks = "1 day",date_labels = "%d/%m")
 
 
 hono_no2_ratio = dat %>% 
-  filter(campaign != "no campaign") %>% 
+  filter(campaign != "February 2020",
+         campaign != "no campaign") %>%
   mutate(hono_no2 = hono/no2) %>% 
   pivot_wider(names_from = campaign,values_from = hono_no2)
 
 diurnal = hono_no2_ratio %>% 
-  rename("Nov 2015"="November 2015","Aug 2019"="August 2019","Feb 2020"="February 2020","Feb 2023"="February 2023") %>% 
-  timeVariation(pollutant = c("Nov 2015","Aug 2019","Feb 2020","Feb 2023"))
+  rename("Nov 2015"="November 2015","Aug 2019"="August 2019","Feb 2023"="February 2023") %>% 
+  timeVariation(pollutant = c("Nov 2015","Aug 2019","Feb 2023"))
 
 diurnal_dat = diurnal$data$hour
 
@@ -147,3 +151,9 @@ diurnal_dat %>%
   scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
   # ylim(-0.5,12) +
   theme(legend.position = "top")
+
+ggsave('hono_no2_ratio_diurnal.svg',
+       path = "output/plots",
+       width = 30,
+       height = 12,
+       units = 'cm')
