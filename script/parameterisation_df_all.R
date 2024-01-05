@@ -6,7 +6,10 @@ library(openair)
 
 Sys.setenv(TZ = 'UTC')
 
-#calculating daily f both from measured hono data and from parameterisation
+#creates the parameterisatin df - df that has all the info necessary to look at parameterised f
+#then looking at f for all three campaigns (2015, 2019 and 2023)
+#the most up to date code for the parameterisation is in parameterisation23
+#but it is only used for 2023 data
 
 # Constants ---------------------------------------------------------------
 
@@ -22,7 +25,111 @@ standardise <- function(x){
 }
 
 
-# Reading in data - created in bottom section of df -----------------------
+# Creating parameterisation df ---------------------------------------------
+
+# dataset from Simone, who got it from Roberto,contains majority of info needed for 2015 parameterisation
+# no data is different from current 2015 df
+og_dat15 = read.csv("data/aerosol_data/cv_data_2015.csv") %>%
+  tibble() %>%
+  mutate(date = ymd_hms(date)) %>%
+  clean_names() %>%
+  rename(o3_ppb = o3_mean_ppb,
+         co_ppb = co_mean_ppb) %>%
+  select(-c(hono_ppt,no_ppt:jhno3,flag_met,o3_std_ppb,co_std_ppb,flag_o3,flag_co))
+
+#getting oh, nox and air mass data from master df - nox data wrong in dataset above
+newer_dat15 = read.csv("output/data/all_data_utc.csv") %>%
+  tibble() %>%
+  mutate(date = ymd_hms(date)) %>%
+  filter(date > "2015-11-22 23:00" & date < "2015-12-05") %>%
+  select(date,hono,no:oh,jhono:jo1d,upwelling:south_atlantic)
+
+#creating final dataset for parameterisation for 2015
+final_dat15 = left_join(og_dat15,newer_dat15,by = "date") %>%
+  mutate(hour = hour(date),
+         day = day(date),
+         year = year(date),
+         month = month(date)) %>%
+  select(date,hono,no,no2,oh,nitrate_ug_m3,jhono,jhno3,jno2,jo1d,o3_ppb,co_ppb,rh,upwelling:south_atlantic,mass_ug_m3:calcium_ug_m3)
+
+#dataset from Simone, who got it from Roberto, contains majority of info needed for 2019 parameterisation
+og_dat19 = read.csv("data/aerosol_data/cv_data_2019.csv") %>%
+  tibble() %>%
+  filter(date > "2019-08-15") %>%
+  mutate(date = ymd_hms(date)) %>%
+  clean_names() %>%
+  rename(o3_ppb = o3_mean_ppb,
+         co_ppb = co_mean_ppb) %>%
+  select(-c(hono_ppt,no_ppt:jhno3,flag_met,o3_std_ppb,co_std_ppb,flag_o3,flag_co))
+
+#getting oh, nox and air mass data from master df - nox data wrong in dataset above
+newer_dat19 = read.csv("output/data/all_data_utc.csv") %>%
+  tibble() %>%
+  mutate(date = ymd_hms(date)) %>%
+  filter(campaign == "August 2019") %>%
+  select(date,hono,no:oh,jhono:jo1d,upwelling:south_atlantic)
+
+#read in ozone data for 2019
+# ozone_met = read.csv("data/2006-2022_Met_O3_data.csv") %>%
+#   tibble() %>%
+#   mutate(date = ymd_hms(date)) %>%
+#   clean_names() %>%
+#   select(date,o3_mean_ppb = o3)
+#
+# df_list = list(newer_dat19,og_dat19,ozone_met)
+
+final_dat19 = left_join(newer_dat19,og_dat19,by = "date") %>%
+  # df_list %>%
+  # reduce(left_join,by = "date") %>%
+  mutate(hour = hour(date),
+         day = day(date),
+         year = year(date),
+         month = month(date)) %>%
+  select(date,hono,no,no2,oh,nitrate_ug_m3,jhono,jhno3,jno2,jo1d,o3_ppb,co_ppb,rh,upwelling:south_atlantic,mass_ug_m3:calcium_ug_m3)
+
+dat23 = read.csv("output/data/all_data_utc.csv") %>%
+  tibble() %>%
+  fill(nitrate_ug_m3,.direction = "updown") %>%
+  mutate(date = ymd_hms(date)) %>%
+  filter(campaign == "February 2023") %>%
+  select(date,hono,hono_err,no,no2,oh,nitrate_ug_m3,jhono,jhno3,jno2,jo1d,rh,upwelling:south_atlantic)
+
+o3_co_23 = read.csv("data/CO_O3_Feb23.csv") %>%
+  tibble() %>%
+  mutate(date = dmy_hm(date),
+         date = round_date(date,"1 hour")) %>%
+  select(date,o3_ppb = O3_ppbV,co_ppb = CO_ppbV) %>%
+  filter(date > "2023-02-07" & date < "2023-02-27")
+
+all23 = dat23 %>% left_join(o3_co_23,by = "date")
+
+#calculating seasalt and non-seasalt aerosol composition based on values Rosie gave me
+dat = bind_rows(final_dat15,final_dat19,all23) %>% arrange(date) %>%
+  fill(c(upwelling:south_atlantic),.direction = "down") %>%
+  mutate(hour = hour(date),
+         day = day(date),
+         year = year(date),
+         month = month(date),
+         ocean = north_atlantic + south_atlantic + upwelling,
+         ss_ca = sodium_ug_m3 * (10.2/468),
+         nss_ca = calcium_ug_m3 - ss_ca,
+         ss_k = sodium_ug_m3 * (10.2/468),
+         nss_k = potassium_ug_m3- ss_k,
+         ss_mg = sodium_ug_m3 * (53.2/468),
+         nss_mg = magnesium_ug_m3 - ss_mg,
+         ss_so4 = sodium_ug_m3 * (28.2/468),
+         nss_so4 = sulfate_ug_m3 - ss_so4,
+         sea_salt = 1.17 * (sodium_ug_m3 + chloride_ug_m3),
+         bb_ratio_k_ca = nss_k/nss_ca,
+         bb_ratio_so4_no3 = nitrate_ug_m3/nss_so4,
+         aerosol = case_when(nss_ca > 4 & sahara > 0 ~ "dust",
+                             bb_ratio_k_ca > 0.24 & bb_ratio_so4_no3 > 1.4 ~ "biomass burning",
+                             sea_salt > 11 & ocean > 70 ~ "marine",
+                             TRUE ~ "other"))
+
+# write.csv(dat,"output/data/data_parameterisation.csv",row.names = F)
+
+# Reading in data - created in previous section of code -----------------------
 
 dat = read.csv("output/data/data_parameterisation.csv") %>% 
   mutate(date = ymd_hms(date))
@@ -526,121 +633,4 @@ photo_production %>%
 
 
 
-# Reading in and tidying data ---------------------------------------------
 
-#dataset from Simone, who got it from Roberto (?),contains majority of info needed for 2015 f parameterisation
-#no data is different from current 2015 df - use more up to date data
-# og_dat15 = read.csv("data/aerosol_data/cv_data_2015.csv") %>%
-#   tibble() %>%
-#   mutate(date = ymd_hms(date)) %>%
-#   clean_names() %>%
-#   rename(o3_ppb = o3_mean_ppb,
-#          co_ppb = co_mean_ppb) %>% 
-#   select(-c(hono_ppt,no_ppt:jhno3,flag_met,o3_std_ppb,co_std_ppb,flag_o3,flag_co))
-# 
-# #getting oh, nox and air mass data from master df - nox data wrong in dataset above
-# newer_dat15 = read.csv("output/data/all_data_utc.csv") %>%
-#   tibble() %>%
-#   mutate(date = ymd_hms(date)) %>%
-#   filter(date > "2015-11-22 23:00" & date < "2015-12-05") %>% 
-#   select(date,hono,no:oh,jhono:jo1d,upwelling:south_atlantic)
-# 
-# #creating final dataset for f parameterisation for 2015
-# final_dat15 = left_join(og_dat15,newer_dat15,by = "date") %>%
-#   mutate(hour = hour(date),
-#          day = day(date),
-#          year = year(date),
-#          month = month(date)) %>%
-#   select(date,hono,no,no2,oh,nitrate_ug_m3,jhono,jhno3,jno2,jo1d,o3_ppb,co_ppb,rh,upwelling:south_atlantic,mass_ug_m3:calcium_ug_m3)
-# 
-# #dataset from Simone, who got it from Roberto (?),contains majority of info needed for 2019 f parameterisation
-# og_dat19 = read.csv("data/aerosol_data/cv_data_2019.csv") %>%
-#   tibble() %>%
-#   filter(date > "2019-08-15") %>%
-#   mutate(date = ymd_hms(date)) %>%
-#   clean_names() %>%
-#   rename(o3_ppb = o3_mean_ppb,
-#          co_ppb = co_mean_ppb) %>%
-#   select(-c(hono_ppt,no_ppt:jhno3,flag_met,o3_std_ppb,co_std_ppb,flag_o3,flag_co))
-# 
-# #getting oh, nox and air mass data from master df - nox data wrong in dataset above
-# newer_dat19 = read.csv("output/data/all_data_utc.csv") %>%
-#   tibble() %>%
-#   mutate(date = ymd_hms(date)) %>%
-#   filter(campaign == "August 2019") %>%
-#   select(date,hono,no:oh,jhono:jo1d,upwelling:south_atlantic)
-# 
-# #read in ozone data for 2019
-# # ozone_met = read.csv("data/2006-2022_Met_O3_data.csv") %>%
-# #   tibble() %>%
-# #   mutate(date = ymd_hms(date)) %>%
-# #   clean_names() %>%
-# #   select(date,o3_mean_ppb = o3)
-# #
-# # df_list = list(newer_dat19,og_dat19,ozone_met)
-# 
-# final_dat19 = left_join(newer_dat19,og_dat19,by = "date") %>%
-#   # df_list %>%
-#   # reduce(left_join,by = "date") %>%
-#   mutate(hour = hour(date),
-#          day = day(date),
-#          year = year(date),
-#          month = month(date)) %>%
-#   select(date,hono,no,no2,oh,nitrate_ug_m3,jhono,jhno3,jno2,jo1d,o3_ppb,co_ppb,rh,upwelling:south_atlantic,mass_ug_m3:calcium_ug_m3)
-# 
-# dat23 = read.csv("output/data/all_data_utc.csv") %>%
-#   tibble() %>%
-#   fill(nitrate_ug_m3,.direction = "updown") %>%
-#   mutate(date = ymd_hms(date)) %>%
-#   filter(campaign == "February 2023") %>%
-#   select(date,hono,hono_err,no,no2,oh,nitrate_ug_m3,jhono,jhno3,jno2,jo1d,rh,upwelling:south_atlantic)
-# 
-# o3_co_23 = read.csv("data/CO_O3_Feb23.csv") %>%
-#   tibble() %>%
-#   mutate(date = dmy_hm(date),
-#          date = round_date(date,"1 hour")) %>%
-#   select(date,o3_ppb = O3_ppbV,co_ppb = CO_ppbV) %>%
-#   filter(date > "2023-02-07" & date < "2023-02-27")
-# 
-# all23 = dat23 %>% left_join(o3_co_23,by = "date")
-# 
-# dat = bind_rows(final_dat15,final_dat19,all23) %>% arrange(date) %>%
-#   fill(c(upwelling:south_atlantic),.direction = "down") %>%
-#   mutate(hour = hour(date),
-#          day = day(date),
-#          year = year(date),
-#          month = month(date),
-#          ocean = north_atlantic + south_atlantic + upwelling,
-#          ss_ca = sodium_ug_m3 * (10.2/468),
-#          nss_ca = calcium_ug_m3 - ss_ca,
-#          ss_k = sodium_ug_m3 * (10.2/468),
-#          nss_k = potassium_ug_m3- ss_k,
-#          ss_mg = sodium_ug_m3 * (53.2/468),
-#          nss_mg = magnesium_ug_m3 - ss_mg,
-#          ss_so4 = sodium_ug_m3 * (28.2/468),
-#          nss_so4 = sulfate_ug_m3 - ss_so4,
-#          sea_salt = 1.17 * (sodium_ug_m3 + chloride_ug_m3),
-#          bb_ratio_k_ca = nss_k/nss_ca,
-#          bb_ratio_so4_no3 = nitrate_ug_m3/nss_so4,
-#          aerosol = case_when(nss_ca > 4 & sahara > 0 ~ "dust",
-#                              bb_ratio_k_ca > 0.24 & bb_ratio_so4_no3 > 1.4 ~ "biomass burning",
-#                              sea_salt > 11 & ocean > 70 ~ "marine",
-#                              TRUE ~ "other"))
-# 
-# write.csv(dat,"output/data/data_parameterisation.csv",row.names = F)
-#
-# dat %>% 
-#   filter(year != 2023) %>%
-#   pivot_longer(c(sodium_ug_m3,chloride_ug_m3)) %>% 
-#   ggplot(aes(date,hono,col = aerosol)) +
-#   geom_path(group = 1) +
-#   # scale_colour_viridis_c() +
-#   facet_wrap(vars(year),ncol = 1,scales = "free") +
-#   theme(legend.position = "top") +
-#   NULL
-# 
-# ggsave('aerosol_classification.png',
-#        path = "output/plots",
-#        width = 32,
-#        height = 15,
-#        units = 'cm')

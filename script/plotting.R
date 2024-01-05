@@ -7,6 +7,8 @@ library(viridis)
 
 Sys.setenv(TZ = 'UTC')
 
+#plots data faceted based on campaigns - look in parameterisation_df_all and parameterisation23 for pss plots
+
 #read in full data (data joined in creating_master_df)
 
 dat_full = read.csv("output/data/all_data_utc.csv") %>% 

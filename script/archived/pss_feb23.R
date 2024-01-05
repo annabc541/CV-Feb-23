@@ -6,6 +6,7 @@ library(zoo)
 library(viridis)
 
 #used for looking at feb 2023 pss and creating plots with different f and dep velocities
+#calculates f based on missing hono production, but doesn't use parameterisation
 
 kp = 3.3 * 10^-11 #rate constant for oh + no -> hono (from Atkinson et al. 2004)
 kl = 6 * 10^-12 #rate constant for oh + hono -> h2o + no2 (from Atkinson et al. 2004)

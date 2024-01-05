@@ -6,7 +6,9 @@ library(openair)
 
 Sys.setenv(TZ = 'UTC')
 
-#calculating daily f both from measured hono data and from parameterisation
+#used to be called agu - was used to generate plots for agu
+#now calculates f for 2023 using matt's parameterisation and then plots it nicely
+#most up to date code for parameterisation, currently still using ML nitrate
 
 # Constants ---------------------------------------------------------------
 
@@ -22,14 +24,16 @@ standardise <- function(x){
 }
 
 
-# Reading in data - created in bottom section of df -----------------------
+# Reading in data -----------------------
 
+#feb 2023 data required for parameterisation
 dat = read.csv("output/data/data_parameterisation.csv") %>% 
   mutate(date = ymd_hms(date)) %>% 
   filter(year == 2023) %>% 
   select(-c(mass_ug_m3:calcium_ug_m3,ocean:aerosol))
 
-arna_data = read.csv("data/arna_hono/Renoxification_data_for_Anna_v2.csv") %>% 
+#hono data from simone's arna campaign
+arna_data = read.csv("data/hono/arna_hono/Renoxification_data_for_Anna_v2.csv") %>% 
   mutate(date = dmy_hm(Start_time),
          year = year(date)) %>% 
   select(date,nitrate_ppt = NO3_ppt,
@@ -46,7 +50,6 @@ arna_data = read.csv("data/arna_hono/Renoxification_data_for_Anna_v2.csv") %>%
 # Calculating daily enhancement factors -----------------------------------
 
 #all calculations performed in molecules per cm3 and s-1
-rh_mean = mean(daily_f$rh,na.rm = T)
 
 hourly_f = dat %>%
   rename(hono_ppt = hono,oh_m_cm3 = oh,no_ppt = no,no2_ppt = no2) %>% 
@@ -61,7 +64,7 @@ hourly_f = dat %>%
          missing_production = (loss - production_without_nitrate), #molecule cm-3 s-1
          f_calc = missing_production/(jhno3 * nitrate_m_cm3),
          # f_para_rh = (10^5/((1+80.07*nitrate_nmol_m3))) * (rh/rh_mean),
-         f_para = 103706014.61/(1+83211.37 *nitrate_nmol_m3),
+         f_para = 103706014.61/(1+83211.37 *nitrate_nmol_m3), #matt rowlinson's parameterisation
          # hono_para_rh = ((production_without_nitrate + (jhno3 * nitrate_m_cm3 * f_para_rh)) / (jhono + (kl*oh_m_cm3) + kdep))
          # / (2.46 * 10^19 * 10^-12),
          hono_para = ((production_without_nitrate + (jhno3 * nitrate_m_cm3 * f_para)) / (jhono + (kl*oh_m_cm3) + kdep))
@@ -76,6 +79,7 @@ daily_f = hourly_f %>%
 
 # write.csv(daily_para,"output/data/parameterised23.csv",row.names = F)
 
+#same as above but with arna data, one f value calculated per flight
 arna_f = arna_data %>%
   rename(hono_ppt = hono,no_ppt = no) %>% 
   mutate(lifetime = 1/jhono,
@@ -98,10 +102,11 @@ arna_f = arna_data %>%
 
 # Using daily f to calculate pss hono -------------------------------------
 
+#calculating pss hono with daily f
+
 only_daily_f = daily_f %>% 
   select(date,f_para,ratio_hono,)
 
-#using daily f to see hono timeseries
 pss_dat = dat %>%
   rename(hono_ppt = hono,oh_m_cm3 = oh,no_ppt = no,no2_ppt = no2) %>% 
   left_join(only_daily_f,by = "date") %>% 
@@ -187,7 +192,8 @@ ggsave('hono_timeseries23.svg',
 pss_dat %>%
   mutate(hono_para_err = hono_para *0.1,
          hono_min = hono_ppt - hono_err,
-         hono_max = hono_ppt + hono_err) %>%
+         hono_max = hono_ppt + hono_err,
+         hono_para = ifelse(hono_para > -1, hono_para,NA_real_)) %>%
   # rename('Parameterised PSS' = hono_para,
   #        'Measured' = hono_ppt) %>%
   # pivot_longer(c('Parameterised PSS','Measured')) %>%
@@ -217,7 +223,130 @@ ggsave('timeseries_para_rh.svg',
        units = 'cm')
 
 
+# Feb 2023 HONO diurnal with PSS ------------------------------------------
+
+diurnal = pss_dat %>% 
+  mutate(hono_para_err = hono_para *0.1) %>% 
+  rename(HONO = hono_ppt) %>% 
+  filter(is.na(HONO) == FALSE,
+         year == 2023) %>% 
+  timeVariation(pollutant = c("HONO","hono_err","hono_para","hono_para_err"))
+
+diurnal_dat = diurnal$data$hour %>% 
+  ungroup() %>% 
+  pivot_wider(names_from = variable,values_from = Mean) %>% 
+  group_by(hour) %>% 
+  summarise(HONO = mean(HONO,na.rm = T),
+            hono_err = mean(hono_err,na.rm = T),
+            hono_para = mean(hono_para,na.rm = T),
+            hono_para_err = mean(hono_para_err,na.rm = T))
+
+
+diurnal_dat %>%
+  ggplot(aes(hour,HONO)) +
+  geom_path(aes(hour,HONO),size = 0.75,col = "steelblue1") +
+  geom_ribbon(aes(ymin = HONO - hono_err,ymax = HONO + hono_err),alpha = 0.25,fill = "steelblue1") +
+  geom_path(aes(hour,hono_para),size = 0.75,col = "black") +
+  geom_ribbon(aes(ymin = hono_para - hono_para_err,ymax = hono_para + hono_para_err),alpha = 0.25,fill = "black") +
+  # facet_grid(rows = vars(variable),scales = "free_y",labeller = label_parsed) +
+  theme_bw() +
+  labs(x = "Hour of day (UTC)",
+       y = "HONO (ppt)",
+       color = NULL) +
+  scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
+  # ylim(-1,13) +
+  theme(legend.position = "top")
+
+ggsave('hono_para_diurnal.svg',
+       path = "output/plots/agu",
+       width = 8,
+       height = 12.28,
+       units = 'cm')
+
+# Feb23 and ARNA data comparison ------------------------------------------
+
+arna_f_mbl = arna_f %>% 
+  filter(year == 2020)
+
+model = lm(ratio_hono ~ rh,arna_f_mbl)
+summary(model)
+
+arna_feb23 = hourly_f %>% 
+  select(date,nitrate_ug_m3,hono_ppt,hono_err,rh,f_para,hono_para,ratio_hono,year,f_calc) %>% 
+  bind_rows(arna_f) %>% 
+  mutate(campaign = case_when(year == 2023 ~ "February 2023 campaign",
+                              TRUE ~ "Previous campaigns at the CVAO"),
+         rh_se = rh * 2 /100,
+         hono_para_err = hono_para *0.1)
+
+arna_feb23 %>% 
+  mutate(f_calc_err = f_calc * 0.1) %>% 
+  ggplot(aes(rh,f_calc,col = nitrate_ug_m3)) +
+  theme_bw() +
+  facet_wrap(~campaign,scale = "free_x") +
+  geom_point() +
+  geom_smooth(data = subset(arna_feb23,campaign == "Previous campaigns at the CVAO"),method = "lm",se=F,col = "black") +
+  labs(x = "RH (%)",
+       y = "EF from missing HONO",
+       col = "Nitrate") +
+  geom_linerange(aes(xmax = rh + 2,xmin = rh - 2)) +
+  geom_linerange(aes(ymax = f_calc + f_calc_err,ymin = f_calc - f_calc_err)) +
+  scale_colour_gradient2(low = "darkorange",mid = "slategray1",high = "steelblue1",midpoint = 2) +
+  # geom_linerange(aes(ymax = ratio_hono + ratio_err,ymin = ratio_hono - ratio_err)) +
+  # scale_colour_manual(values = c("darkorange","black","steelblue1"),
+  #                     breaks = c("ARNA 2019 flight campaign","ARNA 2020 flight campaign","February 2023 ground campaign")) +
+  NULL
+
+ggsave('f_calc_vs_rh.svg',
+       path = "output/plots/agu",
+       width = 23.43,
+       height = 10,
+       units = 'cm')
+
+
+# Daytime hourly rh vs hono ratio -----------------------------------------
+ 
+#not used in agu presentation
+
+hourly_f %>% 
+  mutate(rh_se = rh * 2 /100,
+         hono_para_err = hono_para *0.1,
+         ratio_err = ratio_hono * sqrt((hono_err/hono_ppt)^2 + (hono_para_err/hono_para)^2)) %>% 
+  ggplot(aes(rh,ratio_hono)) +
+  theme_bw() +
+  theme(legend.position = "top") +
+  geom_point(col = "steelblue1") +
+  geom_linerange(aes(xmax = rh + rh_se,xmin = rh - rh_se),col = "steelblue1") +
+  geom_linerange(aes(ymax = ratio_hono + ratio_err,ymin = ratio_hono - ratio_err),col = "steelblue1") +
+  geom_smooth(method = "lm",se=F,col = "black") +
+  labs(x = "RH (%)",
+       y = "Measured HONO / Parameterised HONO",
+       col = NULL)
+
+arna_f %>% 
+  mutate(rh_se = rh * 2 /100,
+         hono_para_err = hono_para *0.1,
+         ratio_err = ratio_hono * sqrt((hono_err/hono_ppt)^2 + (hono_para_err/hono_para)^2)) %>% 
+  ggplot(aes(rh,ratio_hono)) +
+  theme_bw() +
+  theme(legend.position = "top") +
+  geom_point(col = "darkorange") +
+  geom_linerange(aes(xmax = rh + rh_se,xmin = rh - rh_se),col = "darkorange") +
+  geom_linerange(aes(ymax = ratio_hono + ratio_err,ymin = ratio_hono - ratio_err),col = "darkorange") +
+  geom_smooth(method = "lm",se=F,col = "black") +
+  labs(x = "RH (%)",
+       y = "Measured HONO / Parameterised HONO",
+       col = NULL)
+
+ggsave('ratio_vs_rh_feb23.svg',
+       path = "output/plots/agu",
+       width = 11.75,
+       height = 10,
+       units = 'cm')
+
 # HONO ratio --------------------------------------------------------------
+
+#not used in agu presentation
 
 daily_f %>% 
   ggplot(aes(rh,ratio_hono)) +
@@ -257,6 +386,8 @@ ggsave('ratio_vs_nitrate_rh.svg',
 
 # Enhancement factors -----------------------------------------------------
 
+#not used in agu
+
 daily_f %>% 
   rename("Parameteriesed f" = f_para,
          "f calculated from missing HONO" = f_calc) %>%
@@ -275,86 +406,4 @@ ggsave('f_vs_nitrate.svg',
        path = "output/plots/agu",
        width = 17,
        height = 9.6,
-       units = 'cm')
-
-
-
-# Feb23 and ARNA data comparison ------------------------------------------
-
-arna_f_mbl = arna_f %>% 
-  filter(year == 2020)
-
-model = lm(f_calc ~ rh,arna_f)
-summary(model)
-
-arna_feb23 = hourly_f %>% 
-  select(date,nitrate_ug_m3,hono_ppt,hono_err,rh,f_para,hono_para,ratio_hono,year,f_calc,nitrate_nmol_m3,nitrate_m_cm3) %>% 
-  bind_rows(arna_f) %>% 
-  mutate(campaign = case_when(year == 2023 ~ "February 2023 campaign",
-                              TRUE ~ "Previous campaigns at the CVAO"))
-
-arna_feb23 %>% 
-  mutate(rh_se = rh * 2 /100,
-         hono_para_err = hono_para *0.1,
-         ratio_err = ratio_hono * sqrt((hono_err/hono_ppt)^2 + (hono_para_err/hono_para)^2)) %>% 
-  ggplot(aes(rh,f_calc,col = nitrate_ug_m3)) +
-  theme_bw() +
-  # theme(legend.position = "none") +
-  geom_smooth(data = subset(arna_feb23, campaign =="Previous campaigns at the CVAO"),method = "lm",se=F,col = "black") +
-  facet_wrap(~campaign,scale = "free_x") +
-  geom_point() +
-  labs(x = "RH (%)",
-       y = "Enhancement factor (f)",
-       col = "Nitrate") +
-  geom_linerange(aes(xmax = rh + 2,xmin = rh - 2)) +
-  geom_linerange(aes(ymax = ratio_hono + ratio_err,ymin = ratio_hono - ratio_err)) +
-  scale_colour_gradient2(low = "darkorange",
-                         mid = "steelblue1",
-                         high = "darkslateblue",
-                         midpoint = 2) +
-  NULL
-
-ggsave('f_calc_vs_rh.svg',
-       path = "output/plots/agu",
-       width = 23.43,
-       height = 10,
-       units = 'cm')
-
-
-# Daytime hourly rh vs hono ratio -----------------------------------------
-
-hourly_f %>% 
-  mutate(rh_se = rh * 2 /100,
-         hono_para_err = hono_para *0.1,
-         ratio_err = ratio_hono * sqrt((hono_err/hono_ppt)^2 + (hono_para_err/hono_para)^2)) %>% 
-  ggplot(aes(rh,ratio_hono)) +
-  theme_bw() +
-  theme(legend.position = "top") +
-  geom_point(col = "steelblue1") +
-  geom_linerange(aes(xmax = rh + rh_se,xmin = rh - rh_se),col = "steelblue1") +
-  geom_linerange(aes(ymax = ratio_hono + ratio_err,ymin = ratio_hono - ratio_err),col = "steelblue1") +
-  geom_smooth(method = "lm",se=F,col = "black") +
-  labs(x = "RH (%)",
-       y = "Measured HONO / Parameterised HONO",
-       col = NULL)
-
-arna_f %>% 
-  mutate(rh_se = rh * 2 /100,
-         hono_para_err = hono_para *0.1,
-         ratio_err = ratio_hono * sqrt((hono_err/hono_ppt)^2 + (hono_para_err/hono_para)^2)) %>% 
-  ggplot(aes(rh,ratio_hono)) +
-  theme_bw() +
-  theme(legend.position = "top") +
-  geom_point(col = "darkorange") +
-  geom_linerange(aes(xmax = rh + rh_se,xmin = rh - rh_se),col = "darkorange") +
-  geom_linerange(aes(ymax = ratio_hono + ratio_err,ymin = ratio_hono - ratio_err),col = "darkorange") +
-  geom_smooth(method = "lm",se=F,col = "black") +
-  labs(x = "RH (%)",
-       y = "Measured HONO / Parameterised HONO",
-       col = NULL)
-
-ggsave('ratio_vs_rh_feb23.svg',
-       path = "output/plots/agu",
-       width = 11.75,
-       height = 10,
        units = 'cm')

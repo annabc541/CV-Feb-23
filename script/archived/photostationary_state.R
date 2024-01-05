@@ -5,6 +5,9 @@ library(janitor)
 library(zoo)
 library(viridis)
 
+#Calculating f based on missing HONO production and then using that to calculate the pss
+#looks into a way of calculating 15 min pss diurnals - not sure if it's done right or if it's useful
+
 #defining constant values used for PSS calculations
 
 kp = 3.3 * 10^-11 #rate constant for oh + no -> hono (from Atkinson et al. 2004)
