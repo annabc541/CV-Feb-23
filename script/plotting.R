@@ -9,7 +9,7 @@ Sys.setenv(TZ = 'UTC')
 
 #read in full data (data joined in creating_master_df)
 
-dat = read.csv("output/data/all_data_utc.csv") %>% 
+dat_full = read.csv("output/data/all_data_utc.csv") %>% 
   mutate(date = ymd_hms(date))
 
 # Timeseries --------------------------------------------------------------
@@ -105,7 +105,7 @@ ggsave('hono_all_campaigns.svg',
 
 # Campaign diurnals -------------------------------------------------------
 
-diurnal_campaigns = dat %>% 
+diurnal_campaigns = dat_full %>% 
   mutate('NO[x]' = no + no2) %>%
   rename(HONO = hono,NO = no,'NO[2]' = no2) %>% 
   filter(is.na(HONO) == FALSE,
@@ -118,7 +118,7 @@ diurnal_dat = diurnal_campaigns_dat %>%
   ungroup() %>% 
   select(hour,hono = Mean)
 
-write.csv(diurnal_dat,"output/data/diurnal_hono_feb23.csv",row.names = F)
+# write.csv(diurnal_dat,"output/data/diurnal_hono_feb23.csv",row.names = F)
 
 diurnal_campaigns_dat %>% 
   ggplot(aes(hour,Mean)) +
@@ -134,7 +134,7 @@ diurnal_campaigns_dat %>%
   theme(legend.position = "top")
 
 ggsave('hono_diurnal23.svg',
-       path = "output/plots/diurnals",
-       width = 33,
-       height = 19,
+       path = "output/plots/agu",
+       width = 7,
+       height = 10,
        units = 'cm')

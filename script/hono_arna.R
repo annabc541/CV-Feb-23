@@ -4,10 +4,12 @@ library(janitor)
 
 Sys.setenv(TZ = 'UTC')
 
-arna_hono = read.csv("data/arna_hono/Renoxification_data_for_Anna.csv") %>% 
+#looking at HONO data from the ARNA flight campaigns
+
+arna_hono = read.csv("data/hono/arna_hono/Renoxification_data_for_Anna_v2.csv") %>% 
   clean_names() %>% 
-  mutate(start_time = ymd_hms(start_time),
-         end_time = ymd_hms(end_time))
+  mutate(start_time = dmy_hm(start_time),
+         end_time = dmy_hm(end_time))
 
 arna_hono %>% 
   mutate(year = year(start_time),

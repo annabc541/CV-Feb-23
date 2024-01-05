@@ -19,7 +19,19 @@ spec_rad15 = read.csv("data/spec_rad/jrates_all_new_2015-2020.csv") %>%
   timeAverage("1 hour") %>% 
   select(date,jhono = jhono_calc,jhno3 = jhno3_calc,jno2 = jno2_calc,jo1d = jo1d_calc)
 
-#for 2020 data with correct timezone - 2020 data still in wrong timezone - don't use!
+#for 2019 and 2020 data (calc and measured) - 2020 measured data in lt rather than utc
+spec_rad_calc = read.csv("data/spec_rad/2016_2020_Spec_rad_Hourly.csv") %>% 
+  clean_names() %>% 
+  mutate(date = dmy_hm(date),
+         year = year(date),
+         jhono = ifelse(is.na(j_hono),jhono_calc,j_hono),
+         jhno3 = ifelse(is.na(j_hno3),jhno3_calc,j_hno3),
+         jno2 = ifelse(is.na(j_no2),jno2_calc,j_no2),
+         jo1d = ifelse(is.na(j_o1d),jo1d_calc,j_o1d)
+  ) %>% 
+  select(date:j_o1d,j_no2,j_hono,j_hno3,jhono:jo1d)
+
+#for 2020 data with correct timezone - however doesn't have calculated data
 spec_rad_timestamp_adj = read.csv("data/spec_rad/Spec_rad_Hourly_timestamp_adj.csv") %>%
   clean_names() %>%
   select(-c(date,x)) %>%
@@ -27,18 +39,6 @@ spec_rad_timestamp_adj = read.csv("data/spec_rad/Spec_rad_Hourly_timestamp_adj.c
          year = year(date)) %>%
   select(date,j_o1d,j_no2,j_hono,j_hno3) %>%
   rename_with(.fn = function(.x){paste0(.x,"_adj")},.cols = -date)
-
-#for 2019 and 2020 data (calc and measured) - 2020 measured data in lt rather than utc
-spec_rad_calc = read.csv("data/spec_rad/2016_2020_Spec_rad_Hourly.csv") %>% 
-  clean_names() %>% 
-  mutate(date = dmy_hm(date),
-         year = year(date),
-         # j_hono = ifelse(year == 2020,NA_real_,j_hono),
-         # j_hno3 = ifelse(year == 2020,NA_real_,j_hno3),
-         # j_no2 = ifelse(year == 2020,NA_real_,j_no2),
-         # j_o1d = ifelse(year == 2020,NA_real_,j_o1d)
-         ) %>%
-  select(date:j_o1d,j_no2,j_hono,j_hno3)
 
 #for 2023 data
 spec_rad23 = read.csv("data/spec_rad/Specrad_hour_23_with_calc_UPDATED.csv") %>% 
@@ -48,42 +48,46 @@ spec_rad23 = read.csv("data/spec_rad/Specrad_hour_23_with_calc_UPDATED.csv") %>%
   filter(date >= "2023-02-07 08:35" & date < "2023-02-27") %>% 
   clean_names() %>% 
   mutate(jhono = ifelse(is.na(j_hono),jhono_calc,j_hono),
-         jhno3 = ifelse(is.na(j_hno3),jhno3_calc,j_hno3)) %>% 
-  select(date,hour,jhono,jhno3)
+         jhno3 = ifelse(is.na(j_hno3),jhno3_calc,j_hno3),
+         jo1d= ifelse(is.na(j_o1d),jo1d_calc,j_o1d)) %>% 
+  select(date,hour,jhono,jhno3,jno2 = j_no2,jo1d)
 
 # Sorting 2019 and 2020 ---------------------------------------------------
 
-#using calculated data for 2020 as it is in the correct timezone (lines up with solar radiation)
+#using adjusted timezone data for 2020 (lines up with solar radiation)
 spec_rad1920 = left_join(spec_rad_calc,spec_rad_timestamp_adj,by = "date") %>% 
   mutate(year = year(date),
-         jhono = case_when(is.na(j_hono) ~ jhono_calc,
-                           year == 2020 ~ jhono_calc,
-                           TRUE ~ j_hono),
-         jhno3 = case_when(is.na(j_hno3) ~ jhno3_calc,
-                           year == 2020 ~ jhno3_calc,
-                           TRUE ~ j_hno3),
-         jno2 = case_when(is.na(j_no2) ~ jno2_calc,
-                           year == 2020 ~ jno2_calc,
-                           TRUE ~ j_no2),
-         jo1d = case_when(is.na(j_o1d) ~ jo1d_calc,
-                           year == 2020 ~ jo1d_calc,
-                           TRUE ~ j_o1d)) %>% 
+         jhono = case_when(year == 2020 & is.na(j_hono_adj) == F ~ j_hono_adj,
+                           year == 2020 & is.na(j_hono_adj) == T ~ jhono_calc,
+                           TRUE ~ jhono),
+         jhno3 = case_when(year == 2020 & is.na(j_hno3_adj) == F ~ j_hno3_adj,
+                           year == 2020 & is.na(j_hno3_adj) == T ~ jhno3_calc,
+                           TRUE ~ jhno3),
+         jno2 = case_when(year == 2020 & is.na(j_no2_adj) == F ~ j_no2_adj,
+                          year == 2020 & is.na(j_no2_adj) == T ~ jno2_calc,
+                           TRUE ~ jno2),
+         jo1d = case_when(year == 2020 & is.na(j_o1d_adj) == F ~ j_o1d_adj,
+                          year == 2020 & is.na(j_o1d_adj) == T ~ jo1d_calc,
+                           TRUE ~ jo1d)) %>% 
   select(date,jhono,jhno3,jno2,jo1d)
 
-# spec_rad1920 %>% 
-#   filter(year == 2020,
-#          date > "2020-02-04",
-#          date < "2020-02-15"
+# spec_rad1920 %>%
+#   mutate(month = month(date),
+#          day = day(date),
+#          year = year(date)) %>%
+#   filter(month == 2,
+#          year == 2018,
+#          # is.na(j_hono) == F,
+#          # date < "2020-07-07" & date > "2020-07-01"
 #          ) %>%
-#   mutate(solar_radiation = solar_radiation/10^6) %>% 
-#   pivot_longer(c(solar_radiation,jhono)) %>% 
+#   mutate(solar_radiation = solar_radiation/10^6) %>%
+#   pivot_longer(c(jhono,solar_radiation)) %>%
 #   ggplot(aes(date,value,col = name)) +
 #   geom_path() +
-#   # facet_grid(rows = vars(name),scales = "free") +
+#   # facet_grid(rows = vars(name),scales = "free_y") +
+#   # facet_wrap(vars(year),scales = "free_x",ncol = 1) +
+#   # scale_x_datetime(breaks = "6 hours",date_labels = "%H:%M")
 #   NULL
-
-
-
 
 # Calculations for missing spec rad data values ---------------------------
 
@@ -92,12 +96,6 @@ spec_rad1920 = left_join(spec_rad_calc,spec_rad_timestamp_adj,by = "date") %>%
 #missing daytime values should be replaced by calculated values
 spec_rad_to_fix = bind_rows(spec_rad15,spec_rad1920,spec_rad23) %>% 
   mutate(hour = hour(date))
-
-spec_rad_to_fix %>% 
-  filter(date > "2018-02-01" & date < "2018-03-01") %>% 
-  ggplot(aes(date,jno2)) +
-  geom_path()
-
 
 #find average j-values for each hour
 spec_rad_mean = spec_rad_to_fix %>% 
@@ -116,9 +114,9 @@ spec_rad = left_join(spec_rad_to_fix,spec_rad_mean,by = "hour") %>%
   select(-c(jhono_avg,jhno3_avg,jno2_avg,jo1d_avg,hour)) %>%
   arrange(date)
 
-dat %>% 
-  filter(date > "2018-02-01" & date < "2018-03-01") %>% 
-  pivot_longer(c(jhono,jhno3,jno2,jo1d)) %>% 
+spec_rad %>% 
+  filter(date > "2023-02-01") %>% 
+  pivot_longer(c(jhono,jhno3,jno2,jo1d)) %>%
   ggplot(aes(date,value,col = name)) +
   geom_path() +
   facet_grid(rows = vars(name),scales = "free")

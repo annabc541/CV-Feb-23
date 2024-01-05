@@ -7,7 +7,7 @@ library(viridis)
 
 Sys.setenv(TZ = 'UTC')
 
-#for creating a dataframe with HONO,NOx,nitrate,air masses,met data,OH
+#for creating a dataframe with HONO,NOx,nitrate,air masses,met data,OH,j-values
 #as far as I know, all the data is in UTC
 #HONO 2023 data has been corrected before being read in
 #spec rad data from 2023 is corrected when it is read in
@@ -24,26 +24,23 @@ nitrate_dat = read.csv("data/aerosol_data/nitrate_ammonium_CVAO_12-19.csv") %>%
          date = round_date(date, "6 hour")) %>% 
   select(date,nitrate_ug_m3 = nitrate_mg_m)
 
+#nitrate data for Feb 2023 from machine learning
 nitrate_dat_ml = read.csv("data/aerosol_data/CVAO_Nitrate_Prediction_Feb2023.csv") %>% 
   mutate(date = ymd(date)) %>% 
   select(date,nitrate_ug_m3)
 
 all_nitrate = bind_rows(nitrate_dat,nitrate_dat_ml)
 
-all_nitrate %>% 
-  ggplot(aes(date,nitrate_ug_m3)) +
-  geom_point()
-
 air_mass = read.csv("data/new_CVAO_sector_%_boxes_1.csv") %>% 
   rename(date = X) %>% 
   mutate(date = ymd_hm(date)) %>% 
   clean_names()
 
-oh_dat = read.csv("data/OH_provisional.csv") %>% 
+oh_dat = read.csv("data/OH_Precision_051223.csv") %>% 
   clean_names() %>% 
   mutate(date = dmy_hm(time),
-         oh = na.approx(oh_molecules_cm_3,na.rm = F)) %>% #interpolate missing values
-  select(date,oh) %>% 
+         oh = na.approx(oh,na.rm = F),
+         oh_precision = na.approx(oh_precision,na.rm = F)) %>% #interpolate missing values
   timeAverage("1 hour")
 
 spec_rad = read.csv("data/spec_rad/spec_rad_processed.csv") %>% 
@@ -52,8 +49,10 @@ spec_rad = read.csv("data/spec_rad/spec_rad_processed.csv") %>%
 
 # Met data ----------------------------------------------------------------
 
-met_data_historic = read.csv("data/met_data/2006-2021_Met_O3_data.csv") %>% 
-  mutate(date = dmy_hm(date)) %>% 
+met_data_historic = read.csv("data/met_data/2006-2022_Met_O3_data.csv") %>% 
+  mutate(date = ymd_hms(date),
+         date = round_date(date,"1 hour")) %>% 
+  filter(date < "2023-01-01") %>% 
   select(date,ws = WINDSPD_10M,wd = WINDDIR_10M,temp = TEMP_10M,rh = RH_10M)
 
 met_data23 = read.csv("data/met_data/met2023.csv") %>% 
@@ -99,19 +98,19 @@ remove(nox15,nox19,nox20,nox23)
 # HONO data ---------------------------------------------------------------
 
 #hourly data
-hono15 = read.csv("data/hono2015.csv") %>% 
+hono15 = read.csv("data/hono/hono2015.csv") %>% 
   mutate(date = dmy_hm(date),
          date = date + 3600) %>% #changing date to UTC 
   rename(hono = HONO_adj_v2) %>% 
   select(date,hono)
 
 #5 min average
-hono19 = read.csv("data/roberto_data/lopap_aug2019.csv") %>% 
+hono19 = read.csv("data/hono/roberto_data/lopap_aug2019.csv") %>% 
   mutate(date = dmy_hms(start.gmt)) %>% 
   select(date,hono = hono.ppt,hono_err = error.ppt)
 
 #5 min average
-hono20 = read.csv("data/roberto_data/lopap_feb2020.csv") %>% 
+hono20 = read.csv("data/hono/roberto_data/lopap_feb2020.csv") %>% 
   mutate(date = dmy_hms(start.gmt),
          sus_flag = case_when(date > "2020-02-16 07:30" & date < "2020-02-16 12:00" ~ 1,
                               TRUE ~ 0),
@@ -119,7 +118,7 @@ hono20 = read.csv("data/roberto_data/lopap_feb2020.csv") %>%
   select(date,hono)
 
 #hourly data for errors
-hono23 = read.csv("output/data/hono23_hourly_utc.csv") %>% 
+hono23 = read.csv("data/hono/hono23_hourly_utc.csv") %>% 
   mutate(date = ymd_hms(date)) %>% 
   select(date,hono,hono_err)
 
@@ -145,17 +144,19 @@ dat = df_list %>% reduce(full_join,by = "date") %>%
                              campaign == "February 2023" ~ 1.20 * 10^10,
                              TRUE ~ (nitrate_ug_m3 * 10^-12 *6.022 * 10^23)/62.004))#molecules cm-3
 
-dat %>% 
-  filter(campaign != "no campaign",
-         campaign != "February 2020") %>% 
-  fill(nitrate_ug_m3,.direction = "updown") %>%
-  ggplot(aes(date,hono,col = nitrate_ug_m3)) +
-  geom_path(linewidth = 0.8) +
-  facet_wrap(vars(campaign),ncol = 1,scales = "free_x") +
-  scale_colour_viridis_c()
+# dat %>% 
+#   filter(campaign != "no campaign",
+#          campaign != "February 2020",
+#          campaign == "February 2023") %>% 
+#   fill(nitrate_ug_m3,.direction = "updown") %>%
+#   ggplot(aes(date,nitrate_ug_m3)) +
+#   geom_point()
+#   # geom_path(linewidth = 0.8) +
+#   facet_wrap(vars(campaign),ncol = 1,scales = "free_x") +
+#   scale_colour_viridis_c()
 
 #with nitrate from machine learning
-# write.csv(dat,"output/data/all_data_utc.csv",row.names = F)
+write.csv(dat,"output/data/all_data_utc.csv",row.names = F)
 
 # nitrate_dat %>% 
 #   filter(date > "2015-11-23" & date < "2015-12-03 19:00") %>% 

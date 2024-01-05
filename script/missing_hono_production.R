@@ -28,7 +28,8 @@ lm_eqn <- function(df,x,y){
 #read in full data (data joined in creating_master_df)
 
 dat = read.csv("output/data/all_data_utc.csv") %>% 
-  mutate(date = ymd_hms(date)) %>% 
+  mutate(date = ymd_hms(date),
+         hour = hour(date)) %>% 
   fill(c(nitrate_ug_m3,nitrate_molecules_cm3))
 
 
@@ -55,8 +56,9 @@ dat %>%
 # Missing HONO and jhno3 --------------------------------------------------
 
 missing_hono = dat %>%   
+  filter(campaign == "February 2023") %>% 
   rename(oh_m_cm3 = oh,no_ppt = no,no2_ppt = no2,hono_ppt = hono) %>% 
-  filter(hour >= 11 & hour <= 16) %>%
+  filter(hour >= 11 & hour <= 15) %>%
   mutate(lifetime = 1/jhono,
          h = lifetime * dv,
          kdep = 0.01/h,
@@ -72,16 +74,16 @@ missing_hono = dat %>%
 missing_hono %>% 
   # filter(campaign!="February 2023" & campaign!="February 2020") %>%
   timeAverage("1 day") %>%
-  filter(is.na(hono_ppt) == F) %>% 
+  # filter(is.na(hono_ppt) == F) %>% 
   mutate(
     # across(c(upwelling:south_atlantic), ~ na.approx(.x,na.rm =F)),
          polluted_air = north_america+europe,
          african_air = west_africa+sahara+upwelling+sahel+central_africa,
          clean_air = north_atlantic+south_atlantic+upwelling,
-         jhno3 = jhno3 *10^3,
+         # jhno3 = jhno3 *10^3,
          year = year(date)) %>%
-  ggplot(aes(jhno3,missing_production,col = clean_air)) +
-  geom_point(aes(shape = as.character(year))) +
+  ggplot(aes(nitrate_jhno3,missing_production)) +
+  geom_point() +
   # geom_abline(slope = 1) +
   # geom_smooth(method = "lm",se=F) +
   # geom_text(aes(x = 1.75, y = 50, label = lm_eqn(missing_hono,jhno3,missing_production)), parse = TRUE) +
