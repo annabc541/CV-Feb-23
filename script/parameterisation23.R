@@ -174,16 +174,18 @@ dat %>%
   labs(x = "Datetime (UTC)",
        y = "HONO (ppt)",
        col = NULL) +
-  geom_path(size = 0.75,col = "steelblue1") +
+  geom_path(size = 2,col = "steelblue1") +
   geom_ribbon(aes(ymin = hono - hono_err,ymax = hono + hono_err),alpha = 0.25) +
   theme(legend.position = "top") +
   scale_x_datetime(breaks = "2 day",date_labels = "%d/%m/%y") +
+  theme(axis.title = element_text(size = 28),
+        axis.text = element_text(size = 20))
   NULL
 
 ggsave('hono_timeseries23.svg',
-       path = "output/plots/agu",
-       width = 23,
-       height = 13,
+       path = "output/plots/departmental_poster",
+       width = 55.6,
+       height = 12.58,
        units = 'cm')
 
 # Feb 2023 HONO timeseries with PSS ---------------------------------------
@@ -202,12 +204,16 @@ pss_dat %>%
   labs(x = "Datetime (UTC)",
        y = "HONO (ppt)",
        col = "RH (%)") +
-  geom_path(aes(date,hono_para),size = 0.8) +
+  geom_path(aes(date,hono_para),size = 2) +
   geom_ribbon(aes(date,ymin = hono_para - hono_para_err,ymax = hono_para + hono_para_err),alpha = 0.25) +
-  geom_path(aes(date,hono_ppt,col = rh),size = 0.8) +
+  geom_path(aes(date,hono_ppt,col = rh),size = 2) +
   geom_ribbon(aes(x = date,ymin = hono_min,ymax = hono_max),alpha = 0.25) +
   scale_x_datetime(breaks = "2 day",date_labels = "%d/%m/%y") +
   scale_colour_gradient(low = "darkorange",high = "steelblue1") +
+  theme(axis.title = element_text(size = 28),
+        axis.text = element_text(size = 20),
+        legend.text = element_text(size = 20),
+        legend.title = element_text(size = 28)) +
   # facet_wrap(~name,ncol = 1) +
   # geom_ribbon(data = subset(pss_dat,name == "Parameterised PSS"),
   #             aes(x = date,ymin = value - hono_err,ymax = value + hono_err),
@@ -217,9 +223,9 @@ pss_dat %>%
   NULL
 
 ggsave('timeseries_para_rh.svg',
-       path = "output/plots/agu",
-       width = 31.78,
-       height = 13,
+       path = "output/plots/departmental_poster",
+       width = 55.6,
+       height = 12.58,
        units = 'cm')
 
 
@@ -244,9 +250,9 @@ diurnal_dat = diurnal$data$hour %>%
 
 diurnal_dat %>%
   ggplot(aes(hour,HONO)) +
-  geom_path(aes(hour,HONO),size = 0.75,col = "steelblue1") +
+  geom_path(aes(hour,HONO),size = 2,col = "steelblue1") +
   geom_ribbon(aes(ymin = HONO - hono_err,ymax = HONO + hono_err),alpha = 0.25,fill = "steelblue1") +
-  geom_path(aes(hour,hono_para),size = 0.75,col = "black") +
+  geom_path(aes(hour,hono_para),size = 2,col = "black") +
   geom_ribbon(aes(ymin = hono_para - hono_para_err,ymax = hono_para + hono_para_err),alpha = 0.25,fill = "black") +
   # facet_grid(rows = vars(variable),scales = "free_y",labeller = label_parsed) +
   theme_bw() +
@@ -254,13 +260,15 @@ diurnal_dat %>%
        y = "HONO (ppt)",
        color = NULL) +
   scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
+  theme(axis.title = element_text(size = 28),
+        axis.text = element_text(size = 20)) +
   # ylim(-1,13) +
   theme(legend.position = "top")
 
 ggsave('hono_para_diurnal.svg',
-       path = "output/plots/agu",
-       width = 8,
-       height = 12.28,
+       path = "output/plots/departmental_poster",
+       width = 22.28,
+       height = 12.58,
        units = 'cm')
 
 # Feb23 and ARNA data comparison ------------------------------------------

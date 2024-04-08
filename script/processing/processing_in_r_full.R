@@ -47,6 +47,7 @@ slope_mfc = summary(model_mfc_cal)$coefficients[2,1]
 gas_flow_set = 1000
 actual_gas_flow = gas_flow_set*slope_mfc + intercept_mfc
 #values from sampling efficiency controlled by pure hono source
+#can change this when testing with pure hono source in june
 sampling_efficiency = 1 - exp(-7768.943*1/actual_gas_flow-0.116560784)
 
 remove(mfc_cal,model_mfc_cal,intercept_mfc,slope_mfc,gas_flow_set)
@@ -615,7 +616,6 @@ liquid_flow2 = 5/28.67
 conc_cal = 1000/100000 #standard conc / dilution factor
 hono_cal_conc_ch1 = conc_cal/1000 * liquid_flow1/1000 /46*6.022*10^23/(2.46*10^19* actual_gas_flow) * 10^12
 hono_cal_conc_ch2 = conc_cal/1000 * liquid_flow2/1000 /46*6.022*10^23/(2.46*10^19* actual_gas_flow) * 10^12
-
 
 cal = zeroed %>% 
   select(date,ch1_zeroed,ch2_zeroed) %>% 

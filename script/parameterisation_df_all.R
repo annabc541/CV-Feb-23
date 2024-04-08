@@ -24,7 +24,6 @@ standardise <- function(x){
 
 }
 
-
 # Creating parameterisation df ---------------------------------------------
 
 # dataset from Simone, who got it from Roberto,contains majority of info needed for 2015 parameterisation
@@ -449,7 +448,7 @@ surface_area = read.csv("data/arna_hono/Renoxification_data_for_Anna.csv") %>%
   select(date,sa = Surface_area.um.2.cc.,altitude = Altitude_m) %>% 
   filter(altitude < 1000) %>%
   mutate(sa_m = sa*10^-6) #sorting units
-
+https://github.com/wacl-york/WACLaTeX/blob/main/thesis/thesis_master.tex
 sa = max(surface_area$sa_m) #maximum surface area measured
 k_hydro = (gamma * sa * v)/4
 
