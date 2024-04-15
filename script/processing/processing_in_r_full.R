@@ -2,6 +2,7 @@ library(tidyverse)
 library(lubridate)
 library(zoo)
 library(oce)
+library(openair)
 
 Sys.setenv(TZ = "UTC")
 
@@ -30,9 +31,9 @@ ppt <- function(ch1,ch2,se){
   return(x)
 }
 
-lod <- function(ch1_zero_2sd,ch2_zero_2sd,slope_cal1,slope_cal2){
+lod <- function(ch1_zero_3sd,ch2_zero_3sd,slope_cal1,slope_cal2){
   
-  x = ((ch1_zero_2sd*slope_cal1)^2+(ch2_zero_2sd*slope_cal2)^2)^0.5
+  x = ((ch1_zero_3sd*slope_cal1)^2+(ch2_zero_3sd*slope_cal2)^2)^0.5
   return(x)
 }
 
@@ -125,8 +126,8 @@ zero_avg = zeroes_grouped %>%
   group_by(id) %>% 
   summarise(ch1_zeroes = mean(ch1),
             ch2_zeroes = mean(ch2),
-            ch1_zero_2sd = 2 * sd(ch1),
-            ch2_zero_2sd = 2 * sd(ch2),
+            ch1_zero_3sd = 3 * sd(ch1),
+            ch2_zero_3sd = 3 * sd(ch2),
             idx = mean(idx)) %>% 
   ungroup() %>% 
   mutate(idx = round(idx))
@@ -134,11 +135,11 @@ zero_avg = zeroes_grouped %>%
 #interpolate between zeroes and subtract zeroes from measurements
 zeroed = zero_flag %>% 
   mutate(idx = 1:nrow(.)) %>% 
-  left_join(zero_avg) %>%
+  left_join(zero_avg) %>% 
   mutate(ch1_zeroes = na.approx(ch1_zeroes,na.rm = F),
          ch2_zeroes = na.approx(ch2_zeroes,na.rm = F)) %>% 
   fill(ch1_zeroes,ch2_zeroes,.direction = "up") %>% 
-  fill(ch1_zero_2sd,ch2_zero_2sd,.direction = "updown") %>% 
+  fill(ch1_zero_3sd,ch2_zero_3sd,.direction = "downup") %>% 
   mutate(ch1_zeroed = ch1 - ch1_zeroes,
          ch2_zeroed = ch2 - ch2_zeroes)
 
@@ -186,7 +187,7 @@ dat1_calibrated = zeroed %>%
   mutate(ch1_ppt = ch1_zeroed * slope_cal1,
          ch2_ppt = ch2_zeroed * slope_cal2,
          hono = ppt(ch1_ppt,ch2_ppt,sampling_efficiency),
-         hono_lod = lod(ch1_zero_2sd,ch2_zero_2sd,slope_cal1,slope_cal2),
+         hono_lod = lod(ch1_zero_3sd,ch2_zero_3sd,slope_cal1,slope_cal2),
          # hono_err = abs(hono * rel_error/100 + hono_lod),
          date = date - time_corr,
          flag = case_when(date < "2023-02-10 11:25" ~ 1,
@@ -290,7 +291,8 @@ zero_flag = raw_dat2 %>%
                              between(date,as.POSIXct("2023-02-19 17:02"),as.POSIXct("2023-02-19 17:13")) ~ 1, #lower than most, after power cut
                              between(date,as.POSIXct("2023-02-20 11:39"),as.POSIXct("2023-02-20 11:47")) ~ 1, #after power cut
                              between(date,as.POSIXct("2023-02-20 17:55"),as.POSIXct("2023-02-20 18:04")) ~ 1, #after power cut
-                             TRUE ~ 0))
+                             TRUE ~ 0)) %>% 
+  filter(date < "2023-02-21")
 
 #creates a group for each zero and maintains row no. of main df so can easily left_join
 zeroing = rle(zero_flag$zeroing) %>%
@@ -313,8 +315,8 @@ zero_avg = zeroes_grouped %>%
   group_by(id) %>% 
   summarise(ch1_zeroes = mean(ch1),
             ch2_zeroes = mean(ch2),
-            ch1_zero_2sd = 2 * sd(ch1),
-            ch2_zero_2sd = 2 * sd(ch2),
+            ch1_zero_3sd = 3 * sd(ch1),
+            ch2_zero_3sd = 3 * sd(ch2),
             idx = mean(idx)) %>% 
   ungroup() %>% 
   mutate(idx = round(idx))
@@ -322,14 +324,14 @@ zero_avg = zeroes_grouped %>%
 #interpolate between zeroes and subtract zeroes from measurements
 za_zeroed = zero_flag %>% 
   mutate(idx = 1:nrow(.)) %>% 
-  left_join(zero_avg) %>%
+  left_join(zero_avg) %>% 
   mutate(ch1_zeroes = na.approx(ch1_zeroes,na.rm = F),
          ch2_zeroes = na.approx(ch2_zeroes,na.rm = F)) %>% 
   fill(ch1_zeroes,ch2_zeroes,.direction = "up") %>% 
-  fill(ch1_zero_2sd,ch2_zero_2sd,.direction = "updown") %>% 
+  fill(ch1_zero_3sd,ch2_zero_3sd,.direction = "downup") %>% 
   mutate(ch1_zeroed = ch1 - ch1_zeroes,
          ch2_zeroed = ch2 - ch2_zeroes,
-         measuring_conditions = "Reagents 2, ZA zeroes")
+         measuring_conditions = "Reagents 2, ZA zeroes") 
 
 
 # Zeroes r2 (night) -------------------------------------------------------
@@ -400,17 +402,17 @@ night_avg = night_avg %>% arrange(idx)
 
 night_zeroed = night_zeroing %>% 
   mutate(idx = 1:nrow(.)) %>% 
-  left_join(night_avg) %>%
+  left_join(night_avg) %>% 
   mutate(ch1_zeroes = na.approx(ch1_inter,na.rm = F),
          ch2_zeroes = na.approx(ch2_inter,na.rm = F)) %>% 
-  fill(ch1_zeroes,ch2_zeroes,.direction = "up") %>%
+  fill(ch1_zeroes,ch2_zeroes,.direction = "up") %>% 
   mutate(ch1_zeroed = ifelse(date < "2023-02-24 08:41",ch1 - ch1_zeroes,ch1 - 0.04973971),
          ch2_zeroed = ifelse(date < "2023-02-24 08:41",ch2 - ch2_zeroes,ch2 - 0.04323023),
          measuring_conditions = "Reagents 2, nighttime zeroes")
 
 # ZA zeroes r2 (for error analysis) ---------------------------------------
 
-zeroing = night_zeroed %>% 
+zero_flag = night_zeroed %>% 
   mutate(zeroing = case_when(between(date,as.POSIXct("2023-02-21 09:31"),as.POSIXct("2023-02-21 09:44")) ~ 1,
                              between(date,as.POSIXct("2023-02-21 17:15"),as.POSIXct("2023-02-21 17:40")) ~ 1,#postcal
                              between(date,as.POSIXct("2023-02-21 23:47:30"),as.POSIXct("2023-02-21 23:59")) ~ 1,
@@ -441,6 +443,7 @@ zeroing = rle(zero_flag$zeroing) %>%
 
 #join dfs with groups for each zero
 zeroes_grouped = zero_flag %>% 
+  select(-c(idx,id)) %>% 
   mutate(idx = 1:nrow(.)) %>% 
   left_join(zeroing, "idx") %>% #joins two dfs by their row number
   mutate(id = ifelse(is.na(id), 0, id)) #makes id (group) = 0 when not zeroing
@@ -449,16 +452,15 @@ zeroes_grouped = zero_flag %>%
 zero_avg = zeroes_grouped %>% 
   filter(id != 0) %>%
   group_by(id) %>% 
-  summarise(ch1_zero_2sd = 2 * sd(ch1),
-            ch2_zero_2sd = 2 * sd(ch2),
+  summarise(ch1_zero_3sd = 3 * sd(ch1),
+            ch2_zero_3sd = 3 * sd(ch2),
             idx = mean(idx)) %>% 
   ungroup() %>% 
   mutate(idx = round(idx))
 
-#interpolate between zeroes and subtract zeroes from measurements
 night_zeroed_sd = night_zeroed %>%
-  left_join(zero_avg,by = "idx") %>%
-  fill(ch1_zero_2sd,ch2_zero_2sd,.direction = "updown") %>% 
+  left_join(zero_avg,by = "idx") %>% 
+  fill(ch1_zero_3sd,ch2_zero_3sd,.direction = "downup") %>% 
   select(-c(idx,id.x,id.y))
 
 # Calibration r2 -------------------------------------------------------------
@@ -507,7 +509,7 @@ dat2_calibrated = zeroed %>%
   mutate(ch1_ppt = ch1_zeroed * slope_cal1,
          ch2_ppt = ch2_zeroed * slope_cal2,
          hono = ppt(ch1_ppt,ch2_ppt,sampling_efficiency),
-         hono_lod = lod(ch1_zero_2sd,ch2_zero_2sd,slope_cal1,slope_cal2),
+         hono_lod = lod(ch1_zero_3sd,ch2_zero_3sd,slope_cal1,slope_cal2),
          # hono_err = abs(hono * rel_error/100 + hono_lod),
          date = date - time_corr,
          flag = (case_when(between(date,as.POSIXct("2023-02-17 08:30"),as.POSIXct("2023-02-17 18:12")) ~ 1, #changing reagents
@@ -548,10 +550,11 @@ dat2_calibrated = zeroed %>%
                            between(date,as.POSIXct("2023-02-26 15:52"),as.POSIXct("2023-02-26 16:32")) ~ 2,
                            TRUE ~ 0)))
 
-# dat2_calibrated %>% 
-#   filter(flag == 0) %>% 
-#   ggplot(aes(date,hono)) +
-#   geom_point()
+# dat2_calibrated %>%
+#   pivot_longer(c(ch1_zero_3sd,ch2_zero_3sd,hono_lod)) %>% 
+#   ggplot(aes(date,value)) +
+#   geom_point() +
+#   facet_grid(rows = vars(name),scales = "free_y")
 
 processed_dat2 = dat2_calibrated %>%
   select(date,hono,hono_lod,flag,measuring_conditions)
@@ -590,8 +593,8 @@ zero_avg = zeroes_grouped %>%
   group_by(id) %>% 
   summarise(ch1_zeroes = mean(ch1),
             ch2_zeroes = mean(ch2),
-            ch1_zero_2sd = 2 * sd(ch1),
-            ch2_zero_2sd = 2 * sd(ch2),
+            ch1_zero_3sd = 3 * sd(ch1),
+            ch2_zero_3sd = 3 * sd(ch2),
             idx = mean(idx)) %>% 
   ungroup() %>% 
   mutate(idx = round(idx))
@@ -599,10 +602,10 @@ zero_avg = zeroes_grouped %>%
 #interpolate between zeroes and subtract zeroes from measurements
 zeroed = zero_flag %>% 
   mutate(idx = 1:nrow(.)) %>% 
-  left_join(zero_avg) %>%
+  left_join(zero_avg) %>% 
   mutate(ch1_zeroes = na.approx(ch1_zeroes,na.rm = F),
          ch2_zeroes = na.approx(ch2_zeroes,na.rm = F)) %>% 
-  fill(ch1_zeroes,ch2_zeroes,ch1_zero_2sd,ch2_zero_2sd,.direction = "updown") %>% 
+  fill(ch1_zeroes,ch2_zeroes,ch1_zero_3sd,ch2_zero_3sd,.direction = "downup") %>% 
   mutate(ch1_zeroed = ch1 - ch1_zeroes,
          ch2_zeroed = ch2 - ch2_zeroes)
 
@@ -651,7 +654,7 @@ dat3_calibrated = zeroed %>%
   mutate(ch1_ppt = ch1_zeroed * slope_cal1,
          ch2_ppt = ch2_zeroed * slope_cal2,
          hono = ppt(ch1_ppt,ch2_ppt,sampling_efficiency),
-         hono_lod = lod(ch1_zero_2sd,ch2_zero_2sd,slope_cal1,slope_cal2),
+         hono_lod = lod(ch1_zero_3sd,ch2_zero_3sd,slope_cal1,slope_cal2),
          # hono_err = abs(hono * rel_error/100 + hono_lod),
          date = date - time_corr,
          flag = case_when(date < "2023-02-07 10:00" ~ 5,#not sure why, just looks weird,zero in there somewhere
@@ -727,35 +730,31 @@ processed_dat3 = despiked_dat %>%
 #4 for air in abs
 #5 other
 
-library(openair)
-
 final_dat = bind_rows(processed_dat3,processed_dat1,processed_dat2) %>% 
+  group_by(time = floor_date(date,"1 hour")) %>% 
+  mutate(hono_lod = ifelse(any(flag == 2),NA_real_,hono_lod)) %>% 
+  ungroup() %>% 
+  fill(hono_lod,.direction = "downup") %>% 
   mutate(hono = ifelse(flag == 0, hono,NA_real_),
          date = date + 3600, #time zone correction - makes data utc
-         flag = case_when(measuring_conditions == "Reagents 1, cal 1" ~ 1,
-                          measuring_conditions == "Reagents 1, cal 2" ~ 0,
-                          measuring_conditions == "Reagents 2, ZA zeroes" ~ 0,
-                          measuring_conditions == "Reagents 2, nighttime zeroes" ~ 2)) %>% 
-  select(date,hono,hono_lod,flag)
+         hono_lod = ifelse(is.na(hono),NA_real_,hono_lod),
+         # flag = case_when(measuring_conditions == "Reagents 1, cal 1" ~ 1,
+         #                  measuring_conditions == "Reagents 1, cal 2" ~ 0,
+         #                  measuring_conditions == "Reagents 2, ZA zeroes" ~ 0,
+         #                  measuring_conditions == "Reagents 2, nighttime zeroes" ~ 2)
+         ) %>% 
+  select(date,hono,hono_lod)
 
-final_dat_avg = final_dat %>% 
-  select(date,hono) %>% 
-  timeAverage("1 hour")
+final_dat_hourly = final_dat %>% 
+  timeAverage("1 hour") %>% 
+  mutate(hono_err = (hono * rel_error/100) + hono_lod)
 
-final_dat_count = final_dat %>% 
-  select(date,hono_count = hono) %>% 
-  timeAverage("1 hour",statistic = "frequency")
+final_dat_hourly %>% 
+  pivot_longer(c(hono_lod,hono_err)) %>% 
+  ggplot(aes(date,value,col = name)) +
+  geom_point()
 
-final_dat_sd = final_dat %>%  
-  select(date,hono_lod) %>% 
-  timeAverage("1 hour",statisitc = "sd")
-
-df_list = list(final_dat_avg,final_dat_count,final_dat_sd)
-
-final_dat_all = df_list %>% reduce(left_join,by = "date") %>% 
-  mutate(hono_err = abs(((2 * hono_lod) / hono_count^0.5) + rel_error/100 * hono))
-
-final_dat_all %>%
+final_dat_hourly %>%
   # filter(date < "2023-02-12") %>%
   mutate(doy = yday(date)) %>%
   ggplot(aes(date,hono)) +
@@ -772,7 +771,7 @@ final_dat_all %>%
   theme(legend.position = "top")
 
 #5 min average saved
-write.csv(final_dat_all,"output/data/hono23_hourly_utc.csv",row.names = FALSE)
+# write.csv(final_dat_hourly,"output/data/hono23_hourly_utc.csv",row.names = FALSE)
 
 # ggsave('hono23_timeseries.svg',
 #        path = "output/plots/hono23",
@@ -804,7 +803,7 @@ write.csv(final_dat_all,"output/data/hono23_hourly_utc.csv",row.names = FALSE)
 #   mutate(hour = hour(date)) %>%
 #   group_by(hour) %>%
 #   summarise(diurnal_hono = mean(hono,na.rm = T),
-#             diurnal_hono_2sd = 2*sd(hono,na.rm = T))
+#             diurnal_hono_3sd = 2*sd(hono,na.rm = T))
 # 
 # diurnal_dat %>%
 #   ggplot(aes(hour,diurnal_hono)) +

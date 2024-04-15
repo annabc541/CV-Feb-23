@@ -15,21 +15,75 @@ Sys.setenv(TZ = 'UTC')
 #the three above sets of data are in LT rather than UTC
 #all other data is in UTC
 
-# Nitrate, air masses, OH and spec rad ------------------------------------
+# Aerosols ------------------------------------
 
-nitrate_dat = read.csv("data/aerosol_data/nitrate_ammonium_CVAO_12-19.csv") %>% 
-  clean_names() %>%
+#2015 and 2019 nitrate data from matt rowlinson
+#2015 and 2019 other aerosol data from Roberto via Simone, for 2015 data changeover at midday, changed to midnight
+#for consistancy. In 2019 changeover at 01:18ish, data hourly average, then converted to utc, I think the change 
+#is at 01:00 rather than midnight because of BST? So have moved the changeover to be at midnight
+#TLDR: edits to time to ensure that both sets changeover at midnight
+
+nitrate1519 = read.csv("data/aerosol_data/nitrate_ammonium_CVAO_12-19.csv") %>% 
+  clean_names() %>% 
   mutate(date = mdy_hm(start_local_time),
+         date = round_date(date,"1 hour"),
+         year = year(date),
          month = month(date),
-         date = round_date(date, "6 hour")) %>% 
-  select(date,nitrate_ug_m3 = nitrate_mg_m)
-
-#nitrate data for Feb 2023 from machine learning
-nitrate_dat_ml = read.csv("data/aerosol_data/CVAO_Nitrate_Prediction_Feb2023.csv") %>% 
-  mutate(date = ymd(date)) %>% 
+         nitrate_ug_m3 = case_when(year == 2015 & month >= 11 ~ nitrate_mg_m,
+                                   year == 2019 & month == 8 ~ nitrate_mg_m,
+                                   TRUE ~ NA_real_)) %>% 
+  filter(is.na(nitrate_ug_m3) == FALSE) %>% 
   select(date,nitrate_ug_m3)
 
-all_nitrate = bind_rows(nitrate_dat,nitrate_dat_ml)
+others15 = read.csv("data/aerosol_data/cv_data_2015.csv") %>%
+  tibble() %>%
+  mutate(date = ymd_hms(date)) %>%
+  clean_names() %>%
+  select(date,mass_ug_m3,chloride_ug_m3,sulfate_ug_m3:calcium_ug_m3)
+
+aerosols15 = nitrate1519 %>% 
+  filter(date < "2016-01-01") %>% 
+  timeAverage("1 day") %>% 
+  full_join(others15) %>% 
+  arrange(date) %>% 
+  mutate(hour = hour(date)) %>% 
+  filter(hour == 0) %>% 
+  select(-hour)
+
+others19 = read.csv("data/aerosol_data/cv_data_2019.csv") %>%
+  tibble() %>%
+  mutate(date = ymd_hms(date,tz = "Europe/London")) %>%
+  clean_names() %>% 
+  select(date,mass_ug_m3,chloride_ug_m3,sulfate_ug_m3:calcium_ug_m3) %>% 
+  timeAverage("1 hour") %>% 
+  with_tz("UTC")
+
+aerosols19 = nitrate1519 %>% 
+  filter(date > "2016-01-01") %>% 
+  full_join(others19) %>% 
+  arrange(date) %>% 
+  mutate(hour = hour(date)) %>% 
+  filter(hour == 0) %>% 
+  select(-hour)
+
+aerosols23 = read.csv("data/aerosol_data/cvao_aerosols23.csv") %>% 
+  mutate(date = dmy_hm(Start)) %>%
+  clean_names() %>% 
+  rename_with(.fn = function(.x){paste0(.x,"_ug_m3")},
+              .cols=-c(sample_id:stop,p_h,date)) %>% 
+  select(date,pH = p_h,mass_ug_m3 = mass_conc_ug_m3,everything(),-c(sample_id,start,stop))
+
+all_aerosols = bind_rows(aerosols23,aerosols15,aerosols19) %>% 
+  arrange(date)
+
+remove(aerosols23,aerosols15,aerosols19,nitrate1519,others15,others19)
+
+# #nitrate data for Feb 2023 from machine learning
+# nitrate_dat_ml = read.csv("data/aerosol_data/CVAO_Nitrate_Prediction_Feb2023.csv") %>%
+#   mutate(date = ymd(date)) %>%
+#   select(date,nitrate_ug_m3)
+
+# Air masses, OH and spec rad ---------------------------------------------
 
 air_mass = read.csv("data/new_CVAO_sector_%_boxes_1.csv") %>% 
   rename(date = X) %>% 
@@ -38,9 +92,7 @@ air_mass = read.csv("data/new_CVAO_sector_%_boxes_1.csv") %>%
 
 oh_dat = read.csv("data/OH_Precision_051223.csv") %>% 
   clean_names() %>% 
-  mutate(date = dmy_hm(time),
-         oh = na.approx(oh,na.rm = F),
-         oh_precision = na.approx(oh_precision,na.rm = F)) %>% #interpolate missing values
+  mutate(date = dmy_hm(time)) %>%
   timeAverage("1 hour")
 
 spec_rad = read.csv("data/spec_rad/spec_rad_processed.csv") %>% 
@@ -52,7 +104,7 @@ spec_rad = read.csv("data/spec_rad/spec_rad_processed.csv") %>%
 met_data_historic = read.csv("data/met_data/2006-2022_Met_O3_data.csv") %>% 
   mutate(date = ymd_hms(date),
          date = round_date(date,"1 hour")) %>% 
-  filter(date < "2023-01-01") %>% 
+  filter(date > "2015-11-01" & date < "2023-01-01") %>% 
   select(date,ws = WINDSPD_10M,wd = WINDDIR_10M,temp = TEMP_10M,rh = RH_10M)
 
 met_data23 = read.csv("data/met_data/met2023.csv") %>% 
@@ -66,6 +118,8 @@ remove(met_data23,met_data_historic)
 
 # NOx data ----------------------------------------------------------------
 
+#update with data from EBAS?
+
 nox15 = read.csv("data/nox_data/nox15.csv") %>% 
   mutate(date = ymd_hms(X)) %>% 
   filter(date > "2015-11-01") %>% 
@@ -75,25 +129,24 @@ nox15 = read.csv("data/nox_data/nox15.csv") %>%
 nox19 = read.csv("data/nox_data/nox19.csv") %>% 
   mutate(date = ymd_hms(X)) %>% 
   filter(date > "2019-08-14" & date < "2019-08-30") %>% 
-  timeAverage("5 min") %>% 
+  timeAverage("1 hour") %>% 
   select(date,no = NO_Conc_art_corrected,no2 = NO2_Conc_diode)
 
 nox20 = read.csv("data/nox_data/nox20.csv") %>% 
   mutate(date = ymd_hms(X)) %>% 
   filter(date > "2020-02-13" & date < "2020-02-28") %>% 
-  timeAverage("5 min") %>% 
+  timeAverage("1 hour") %>% 
   select(date,no = NO_Conc_art_corrected,no2 = NO2_Conc_diode)
 
 nox23 = read.csv("data/nox_data/nox23.csv") %>% 
   mutate(date = ymd_hms(X)) %>% 
   filter(date > "2023-02-07" & date < "2023-02-27") %>% 
-  timeAverage("5 min") %>%
+  timeAverage("1 hour") %>%
   select(date,no = NO_Conc_art_corrected,no2 = NO2_Conc_diode)
 
 nox = bind_rows(nox15,nox19,nox20,nox23)
 
 remove(nox15,nox19,nox20,nox23)
-
 
 # HONO data ---------------------------------------------------------------
 
@@ -107,7 +160,8 @@ hono15 = read.csv("data/hono/hono2015.csv") %>%
 #5 min average
 hono19 = read.csv("data/hono/roberto_data/lopap_aug2019.csv") %>% 
   mutate(date = dmy_hms(start.gmt)) %>% 
-  select(date,hono = hono.ppt,hono_err = error.ppt)
+  select(date,hono = hono.ppt,hono_err = error.ppt) %>% 
+  timeAverage("1 hour")
 
 #5 min average
 hono20 = read.csv("data/hono/roberto_data/lopap_feb2020.csv") %>% 
@@ -115,10 +169,11 @@ hono20 = read.csv("data/hono/roberto_data/lopap_feb2020.csv") %>%
          sus_flag = case_when(date > "2020-02-16 07:30" & date < "2020-02-16 12:00" ~ 1,
                               TRUE ~ 0),
          hono = ifelse(sus_flag == 1,NA_real_,hono.ppt)) %>% 
-  select(date,hono)
+  select(date,hono) %>% 
+  timeAverage("1 hour")
 
 #hourly data for errors
-hono23 = read.csv("data/hono/hono23_hourly_utc.csv") %>% 
+hono23 = read.csv("output/data/hono23_hourly_utc.csv") %>% 
   mutate(date = ymd_hms(date)) %>% 
   select(date,hono,hono_err)
 
@@ -127,39 +182,24 @@ remove(hono15,hono19,hono20,hono23)
 
 # Joining data together ---------------------------------------------------
 
-df_list = list(hono,nox,oh_dat,all_nitrate,spec_rad,met_data,air_mass)
+df_list = list(hono,nox,oh_dat,all_aerosols,spec_rad,met_data,air_mass)
 
 dat = df_list %>% reduce(full_join,by = "date") %>% 
   arrange(date) %>% 
-  filter(date < "2023-02-28",
-         date > "2015-11-23") %>% 
-  timeAverage("1 hour") %>% 
-  mutate(campaign = case_when (date > "2015-11-24 17:00" & date < "2015-12-03 19:00" ~ "November 2015",
-                               date > "2019-08-15 12:29" & date < "2019-08-29 01:00" ~ "August 2019",
-                               date > "2020-02-14 01:00" & date < "2020-02-26 02:56" ~ "February 2020",
-                               date >= "2023-02-07 08:35" ~ "February 2023",
-                               TRUE ~ "no campaign"),
-         oh = ifelse(campaign != "February 2023",2 * 10^6,oh), #molecules cm-3
-         nitrate_molecules_cm3 = case_when(campaign == "February 2020" ~ 1.20 * 10^10,
-                             campaign == "February 2023" ~ 1.20 * 10^10,
-                             TRUE ~ (nitrate_ug_m3 * 10^-12 *6.022 * 10^23)/62.004))#molecules cm-3
+  mutate(year = year(date),
+         month = month(date),
+         keep_data = case_when(year == 2015 & month >= 11 ~ 1,
+                               year == 2019 & month == 8 ~ 1,
+                               year == 2020 & month == 2 ~ 1,
+                               year == 2023 & month == 2 ~ 1)) %>% 
+  filter(keep_data == 1) %>% 
+  select(date,month,year,everything(),-keep_data)
 
-# dat %>% 
-#   filter(campaign != "no campaign",
-#          campaign != "February 2020",
-#          campaign == "February 2023") %>% 
-#   fill(nitrate_ug_m3,.direction = "updown") %>%
-#   ggplot(aes(date,nitrate_ug_m3)) +
-#   geom_point()
-#   # geom_path(linewidth = 0.8) +
-#   facet_wrap(vars(campaign),ncol = 1,scales = "free_x") +
-#   scale_colour_viridis_c()
+#currently not modifying, filling or converting any of the data assembled, leave that to analysis codes
 
-#with nitrate from machine learning
-write.csv(dat,"output/data/all_data_utc.csv",row.names = F)
+  # mutate(oh = ifelse(campaign != "February 2023",2 * 10^6,oh), #molecules cm-3
+  #        nitrate_molecules_cm3 = case_when(campaign == "February 2020" ~ 1.20 * 10^10,
+  #                            TRUE ~ (nitrate_ug_m3 * 10^-12 *6.022 * 10^23)/62.004))
 
-# nitrate_dat %>% 
-#   filter(date > "2015-11-23" & date < "2015-12-03 19:00") %>% 
-#   # timeAverage("1 hour") %>% 
-#   ggplot(aes(date,nitrate)) +
-#   geom_point()
+#with measured nitrate from 2023
+# write.csv(dat,"output/data/all_data_utc.csv",row.names = F)
