@@ -51,12 +51,14 @@ remove(mfc_cal,model_mfc_cal,intercept_mfc,slope_mfc,gas_flow_set)
 
 # Reading in data ---------------------------------------------------------
 
+#25th to 27th April, off over the weekend, calibrated with reagents
 raw_dat1 = read.table("data/hono_gas_source_tests/test5.dat",skip = 4,header = TRUE,sep = ";") %>% 
   mutate(Date = gsub("\\.","-",Date),
          date = paste(Date,Time),
          date = dmy_hms(date)) %>% 
   select(date,ch1 = X550.6,ch2 = X550.0)
 
+#30th April to 3rd May, off over the weekend,calibrated after tubing changed due to irregular flows
 raw_dat2 = read.table("data/hono_gas_source_tests/test6.dat",skip = 4,header = TRUE,sep = ";") %>% 
   mutate(Date = gsub("\\.","-",Date),
          date = paste(Date,Time),
@@ -64,14 +66,21 @@ raw_dat2 = read.table("data/hono_gas_source_tests/test6.dat",skip = 4,header = T
   select(date,ch1 = X550.6,ch2 = X550.0) %>% 
   filter( date > "2024-04-30 10:00") #running on water before this
 
-raw_dat2 %>% 
-  filter(date > "2024-05-02 09:50") %>%
-  pivot_longer(c(ch1,ch2)) %>% 
-  ggplot(aes(date,value)) +
-  geom_point() +
-  facet_grid(rows = vars(name),scales = "free") +
-  # scale_x_datetime(breaks = "1 min",date_labels = "%H:%M") +
-  NULL
+#7th to 9th May, air in abs on 9th May, spectra came back too strong leading to a new set of data
+raw_dat3 = read.table("data/hono_gas_source_tests/test7.dat",skip = 4,header = TRUE,sep = ";") %>% 
+  mutate(Date = gsub("\\.","-",Date),
+         date = paste(Date,Time),
+         date = dmy_hms(date)) %>% 
+  select(date,ch1 = X550.6,ch2 = X550.0) %>% 
+  filter(date > "2024-05-07 09:39" & date < "2024-05-09 09:00")
+
+#9th and 10th May, calibrated again with different spectra following air in abs on 9th May
+raw_dat4 = read.table("data/hono_gas_source_tests/test7.dat",skip = 4,header = TRUE,sep = ";") %>% 
+  mutate(Date = gsub("\\.","-",Date),
+         date = paste(Date,Time),
+         date = dmy_hms(date)) %>% 
+  select(date,ch1 = X550.6,ch2 = X550.0) %>% 
+  filter(date > "2024-05-09 11:00")
 
 # Zeroing 1 -----------------------------------------------------------------
 
@@ -126,14 +135,6 @@ zeroed1 = zero_flag %>%
 
 # Zeroing 2 ---------------------------------------------------------------
 
-raw_dat2 %>% 
-  filter(date > "2024-05-03 08:28" & date < "2024-05-03 08:45") %>% 
-  pivot_longer(c(ch1,ch2)) %>% 
-  ggplot(aes(date,value)) +
-  geom_point() +
-  facet_grid(rows = vars(name),scales = "free") +
-  scale_x_datetime(breaks = "1 min",date_labels = "%H:%M")
-
 zero_flag = raw_dat2 %>% 
   mutate(zeroing = case_when(date > "2024-04-30 11:48" & date < "2024-04-30 12:07" ~ 1,
                              date > "2024-04-30 14:40" & date < "2024-04-30 15:08" ~ 1,#pre-cal
@@ -183,6 +184,117 @@ zeroed2 = zero_flag %>%
   mutate(ch1_zeroes = na.approx(ch1_zeroes,na.rm = F),
          ch2_zeroes = na.approx(ch2_zeroes,na.rm = F)) %>% 
   fill(ch1_zeroes,ch2_zeroes,.direction = "up") %>% 
+  fill(ch1_zero_3sd,ch2_zero_3sd,.direction = "downup") %>% 
+  mutate(ch1_zeroed = ch1 - ch1_zeroes,
+         ch2_zeroed = ch2 - ch2_zeroes)
+
+# Zeroing 3 ---------------------------------------------------------------
+
+zero_flag = raw_dat3 %>% 
+  mutate(zeroing = case_when(date > "2024-05-07 14:54" & date < "2024-05-07 15:15" ~ 1,
+                             date > "2024-05-08 15:02" & date < "2024-05-08 15:18" ~ 1,
+                             date > "2024-05-09 07:59" & date < "2024-05-09 08:17" ~ 1,
+                             TRUE ~ 0))
+
+#creates a group for each zero and maintains row no. of main df so can easily left_join
+zeroing = rle(zero_flag$zeroing) %>%
+  tidy_rle() %>% 
+  filter(values == 1) %>% 
+  mutate(id = 1:nrow(.)) %>% 
+  as.list() %>% 
+  purrr::pmap_df(~data.frame(idx = ..3:..4,id = ..5)) %>% 
+  tibble() 
+
+#join dfs with groups for each zero
+zeroes_grouped = zero_flag %>% 
+  mutate(idx = 1:nrow(.)) %>% 
+  left_join(zeroing, "idx") %>% #joins two dfs by their row number
+  mutate(id = ifelse(is.na(id), 0, id)) #makes id (group) = 0 when not zeroing
+
+#average zero value for each group
+zero_avg = zeroes_grouped %>% 
+  filter(id != 0) %>%
+  group_by(id) %>% 
+  summarise(ch1_zeroes = mean(ch1),
+            ch2_zeroes = mean(ch2),
+            ch1_zero_3sd = 3 * sd(ch1),
+            ch2_zero_3sd = 3 * sd(ch2),
+            idx = mean(idx)) %>% 
+  ungroup() %>% 
+  mutate(idx = round(idx))
+
+zero_avg %>% 
+  pivot_longer(c(ch1_zeroes,ch2_zeroes)) %>% 
+  ggplot(aes(id,value,col = name)) +
+  geom_point()
+
+#interpolate between zeroes and subtract zeroes from measurements
+zeroed3 = zero_flag %>% 
+  mutate(idx = 1:nrow(.)) %>% 
+  left_join(zero_avg) %>% 
+  mutate(ch1_zeroes = na.approx(ch1_zeroes,na.rm = F),
+         ch2_zeroes = na.approx(ch2_zeroes,na.rm = F)) %>% 
+  fill(ch1_zeroes,ch2_zeroes,.direction = "updown") %>% 
+  fill(ch1_zero_3sd,ch2_zero_3sd,.direction = "downup") %>% 
+  mutate(ch1_zeroed = ch1 - ch1_zeroes,
+         ch2_zeroed = ch2 - ch2_zeroes)
+
+
+# Zeroing 4 --------------------------------------------------------------
+
+zero_flag = raw_dat4 %>% 
+  mutate(zeroing = case_when(date > "2024-05-10 08:15" & date < "2024-05-10 08:30" ~ 1,
+                             # date > "2024-05-10 11:15" & date < "2024-05-10 11:50" ~ 1, #precal
+                             date > "2024-05-10 12:22" & date < "2024-05-10 12:30" ~ 1, #postcal
+                             TRUE ~ 0))
+
+#creates a group for each zero and maintains row no. of main df so can easily left_join
+zeroing = rle(zero_flag$zeroing) %>%
+  tidy_rle() %>% 
+  filter(values == 1) %>% 
+  mutate(id = 1:nrow(.)) %>% 
+  as.list() %>% 
+  purrr::pmap_df(~data.frame(idx = ..3:..4,id = ..5)) %>% 
+  tibble() 
+
+#join dfs with groups for each zero
+zeroes_grouped = zero_flag %>% 
+  mutate(idx = 1:nrow(.)) %>% 
+  left_join(zeroing, "idx") %>% #joins two dfs by their row number
+  mutate(id = ifelse(is.na(id), 0, id)) #makes id (group) = 0 when not zeroing
+
+zeroes_grouped %>% 
+  filter(id != 0) %>% 
+  pivot_longer(c(ch1,ch2)) %>% 
+  ggplot(aes(date,value)) +
+  geom_point() +
+  facet_grid(rows = vars(name),scales = "free")
+
+#average zero value for each group
+zero_avg = zeroes_grouped %>% 
+  filter(id != 0) %>%
+  group_by(id) %>% 
+  summarise(ch1_zeroes = mean(ch1),
+            ch2_zeroes = mean(ch2),
+            ch1_zero_3sd = 3 * sd(ch1),
+            ch2_zero_3sd = 3 * sd(ch2),
+            idx = mean(idx)) %>% 
+  ungroup() %>% 
+  mutate(idx = round(idx))
+
+zero_avg %>% 
+  pivot_longer(c(ch1_zeroes,ch2_zeroes)) %>% 
+  ggplot(aes(id,value,col = name)) +
+  geom_point() +
+  facet_grid(rows = vars(name),scales = "free")
+
+#interpolate between zeroes and subtract zeroes from measurements
+zeroed4 = zero_flag %>% 
+  mutate(idx = 1:nrow(.)) %>% 
+  left_join(zero_avg) %>% 
+  mutate(ch1_zeroes = na.approx(ch1_zeroes,na.rm = F),
+         ch2_zeroes = na.approx(ch2_zeroes,na.rm = F)) %>% 
+  fill(ch1_zeroes,ch2_zeroes,.direction = "downup") %>% 
   fill(ch1_zero_3sd,ch2_zero_3sd,.direction = "downup") %>% 
   mutate(ch1_zeroed = ch1 - ch1_zeroes,
          ch2_zeroed = ch2 - ch2_zeroes)
@@ -261,6 +373,44 @@ model_cal2 = lm(y ~ x,cal_df2)
 # intercept_mfc = summary(model_mfc_cal)$coefficients[1,1]
 slope_second_cal2 = summary(model_cal2)$coefficients[2,1]
 
+
+# Calibration 3 -----------------------------------------------------------
+
+#cal parameters
+time_corr2 = 12.47 * 60
+#still need to measure this and it will be different since the pump is now set to 20 rather than 10
+liquid_flow1 = 5/12.92 #took 12:55 min to fill up 5ml volumetric flask
+liquid_flow2 = 5/16.62 #took 16:37 min to fill up 5ml volumetric flask
+conc_cal = 1000/100000 #standard conc / dilution factor
+hono_cal_conc_ch1 = conc_cal/1000 * liquid_flow1/1000 /46*6.022*10^23/(2.46*10^19* actual_gas_flow) * 10^12
+hono_cal_conc_ch2 = conc_cal/1000 * liquid_flow2/1000 /46*6.022*10^23/(2.46*10^19* actual_gas_flow) * 10^12
+
+cal = zeroed4 %>% 
+  select(date,ch1_zeroed,ch2_zeroed) %>% 
+  filter(date > "2024-05-10 11:30" & date < "2024-05-10 12:30") %>%
+  mutate(cal_zero_ch1 = ifelse(between(date,as.POSIXct("2024-05-10 12:22"),as.POSIXct("2024-05-10 12:30")),ch1_zeroed,NA),
+         cal_zero_ch2 = ifelse(between(date,as.POSIXct("2024-05-10 12:22"),as.POSIXct("2024-05-10 12:30")),ch2_zeroed,NA),
+         cal_ch1 = ifelse(between(date,as.POSIXct("2024-05-10 11:58"),as.POSIXct("2024-05-10 12:11")),ch1_zeroed,NA),
+         cal_ch2 = ifelse(between(date,as.POSIXct("2024-05-10 11:58"),as.POSIXct("2024-05-10 12:11")),ch2_zeroed,NA)) %>% 
+  summarise(cal_zero_ch1 = mean(cal_zero_ch1,na.rm = T),
+            cal_zero_ch2 = mean(cal_zero_ch2,na.rm = T),
+            cal_ch1 = mean(cal_ch1,na.rm = T),
+            cal_ch2 = mean(cal_ch2,na.rm = T))
+
+cal_df1 = data.frame(y = c(0,hono_cal_conc_ch1),
+                     x = c(cal$cal_zero_ch1,cal$cal_ch1))
+
+model_cal1 = lm(y ~ x,cal_df1)
+# intercept_mfc = summary(model_mfc_cal)$coefficients[1,1]
+slope_third_cal1 = summary(model_cal1)$coefficients[2,1]
+
+cal_df2 = data.frame(y = c(0,hono_cal_conc_ch2),
+                     x = c(cal$cal_zero_ch2,cal$cal_ch2))
+
+model_cal2 = lm(y ~ x,cal_df2)
+# intercept_mfc = summary(model_mfc_cal)$coefficients[1,1]
+slope_third_cal2 = summary(model_cal2)$coefficients[2,1]
+
 # Applying cals ----------------------------------------------------------
 
 #good data, measuring ambient 0
@@ -275,22 +425,16 @@ dat1 = zeroed1 %>%
          hono_lod = lod(ch1_zero_3sd,ch2_zero_3sd,slope_first_cal1,slope_first_cal2),
          # hono_err = abs(hono * rel_error/100 + hono_lod),
          date = date - time_corr1,
-         flag = case_when(date < "2024-04-24 17:00" ~ 2, #measurements with correct reagents and spectra started at 17:00, remove data before then
-                          date > "2024-04-24 17:00" & date < "2024-04-25 08:15" ~ 0,
-                          date > "2024-04-25 08:15" & date < "2024-04-25 10:36" ~ 2,
-                          date > "2024-04-25 10:36" & date < "2024-04-25 13:50" ~ 1,
-                          date > "2024-04-25 13:50" & date < "2024-04-25 16:00" ~ 2,#cal
-                          date > "2024-04-25 16:00" & date < "2024-04-26 07:50" ~ 1,
-                          date > "2024-04-26 07:50" & date < "2024-04-26 08:40" ~ 2,
-                          date > "2024-04-26 08:40" & date < "2024-04-26 14:40" ~ 1,
-                          date > "2024-04-26 14:40" ~ 2))
-
-dat2 %>% 
-  filter(date > "2024-05-03 07:00" & date < "2024-05-03 09:30") %>% 
-  ggplot(aes(date,hono)) +
-  geom_point() +
-  scale_x_datetime(breaks = "10 min",date_labels = "%H:%M") +
-  NULL
+         # flag = case_when(date < "2024-04-24 17:00" ~ 2, #measurements with correct reagents and spectra started at 17:00, remove data before then
+         #                  date > "2024-04-24 17:00" & date < "2024-04-25 08:15" ~ 0,
+         #                  date > "2024-04-25 08:15" & date < "2024-04-25 10:36" ~ 2,
+         #                  date > "2024-04-25 10:36" & date < "2024-04-25 13:50" ~ 1,
+         #                  date > "2024-04-25 13:50" & date < "2024-04-25 16:00" ~ 2,#cal
+         #                  date > "2024-04-25 16:00" & date < "2024-04-26 07:50" ~ 1,
+         #                  date > "2024-04-26 07:50" & date < "2024-04-26 08:40" ~ 2,
+         #                  date > "2024-04-26 08:40" & date < "2024-04-26 14:40" ~ 1,
+         #                  date > "2024-04-26 14:40" ~ 2)
+         )
 
 dat2 = zeroed2 %>% 
   filter(date >"2024-04-30 13:00") %>% 
@@ -303,33 +447,66 @@ dat2 = zeroed2 %>%
          hono_lod = lod(ch1_zero_3sd,ch2_zero_3sd,slope_second_cal1,slope_second_cal2),
          # hono_err = abs(hono * rel_error/100 + hono_lod),
          date = date - time_corr2,
-         flag = case_when(date > "2024-04-30 14:15" & date < "2024-04-30 16:00" ~ 2,#cal
-                          date > "2024-05-01 10:00" & date < "2024-05-01 11:15" ~ 2,#zero
-                          date > "2024-05-01 16:00" & date < "2024-05-02 08:00" ~ 0.5,#just using ch1
-                          date > "2024-05-02 09:00" & date < "2024-05-02 10:30" ~ 2,#zero
-                          date > "2024-05-02 16:15" & date < "2024-05-02 17:05" ~ 2,#zero
-                          date > "2024-05-03 07:55" ~ 2,#zero
-                          TRUE ~ 1))
+         # flag = case_when(date > "2024-04-30 14:15" & date < "2024-04-30 16:00" ~ 2,#cal
+         #                  date > "2024-05-01 10:00" & date < "2024-05-01 11:15" ~ 2,#zero
+         #                  date > "2024-05-01 16:00" & date < "2024-05-02 08:00" ~ 0.5,#just using ch1
+         #                  date > "2024-05-02 09:00" & date < "2024-05-02 10:30" ~ 2,#zero
+         #                  date > "2024-05-02 16:15" & date < "2024-05-02 17:05" ~ 2,#zero
+         #                  date > "2024-05-03 07:55" ~ 2,#zero
+         #                  TRUE ~ 1)
+         )
 
-dat = bind_rows(dat1,dat2)
+dat3 = zeroed3 %>% 
+  # filter(date >"2024-04-30 13:00") %>% 
+  select(-c(zeroing,id,idx)) %>% 
+  mutate(ch1_ppt = ch1_zeroed * slope_second_cal1,
+         ch2_ppt = ch2_zeroed * slope_second_cal2,
+         hono = ppt(ch1_ppt,ch2_ppt,sampling_efficiency),
+         # hono = case_when(date > "2024-05-01 16:00" & date < "2024-05-02 08:00" ~ ch1_ppt,#lost ch2 overnight
+         #                  TRUE ~ hono),
+         hono_lod = lod(ch1_zero_3sd,ch2_zero_3sd,slope_second_cal1,slope_second_cal2),
+         # hono_err = abs(hono * rel_error/100 + hono_lod),
+         date = date - time_corr2,
+         # flag = case_when(date > "2024-05-07 14:33" & date < "2024-05-07 15:07" ~ 2,#cal
+         #                  date > "2024-05-08 08:00" & date < "2024-05-08 10:30" ~ 2,#zero and chaos
+         #                  date > "2024-05-08 14:30" & date < "2024-05-08 15:15" ~ 2,#zero
+         #                  date > "2024-05-09 07:30" & date < "2024-05-09 08:10" ~ 2,#zero
+         #                  date > "2024-05-09 08:10" & date < "2024-05-09 10:30" ~ 2,#air in abs
+         #                  TRUE ~ 1)
+         )
+
+dat4 = zeroed4 %>% 
+  # filter(date >"2024-04-30 13:00") %>% 
+  select(-c(zeroing,id,idx)) %>% 
+  mutate(ch1_ppt = ch1_zeroed * slope_third_cal1,
+         ch2_ppt = ch2_zeroed * slope_third_cal2,
+         hono = ppt(ch1_ppt,ch2_ppt,sampling_efficiency),
+         # hono = case_when(date > "2024-05-01 16:00" & date < "2024-05-02 08:00" ~ ch1_ppt,#lost ch2 overnight
+         #                  TRUE ~ hono),
+         hono_lod = lod(ch1_zero_3sd,ch2_zero_3sd,slope_second_cal1,slope_second_cal2),
+         # hono_err = abs(hono * rel_error/100 + hono_lod),
+         date = date - time_corr2)
+
+# write.csv(dat_for_wes,"data/processed_data/lopap_hono_0705to1005.csv")
 
 dat %>% 
-  mutate(hono = ifelse(flag > 0 & flag <= 1,hono,NA_real_)) %>%
-  filter(date > "2024-05-02") %>%
-  timeAverage("5 min") %>%
+  filter(date > "2024-05-07" & date < "2024-05-09 09:30") %>%
   ggplot(aes(date,hono)) +
   theme_bw() +
-  geom_path() +
+  geom_point() +
   labs(x = NULL,
        y = "HONO / ppt") +
   # scale_x_datetime(breaks = "2 hours",date_labels = "%b %d %H:%M") +
   NULL
 
-ggsave('lopap_hono_gas_source.svg',
-       path = "output/plots/hono_gas_source_tests",
-       width = 30,
-       height = 12.7,
-       units = 'cm')
+dat = bind_rows(dat1,dat2,dat3,dat4) %>% 
+  mutate(hono_source = case_when())
+
+# ggsave('lopap_hono_gas_source.svg',
+#        path = "output/plots/hono_gas_source_tests",
+#        width = 30,
+#        height = 12.7,
+#        units = 'cm')
 
 
 # Comparing data with NOy converter ---------------------------------------
