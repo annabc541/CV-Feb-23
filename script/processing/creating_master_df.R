@@ -78,10 +78,10 @@ all_aerosols = bind_rows(aerosols23,aerosols15,aerosols19) %>%
 
 remove(aerosols23,aerosols15,aerosols19,nitrate1519,others15,others19)
 
-# #nitrate data for Feb 2023 from machine learning
+#nitrate data for Feb 2023 from machine learning
 # nitrate_dat_ml = read.csv("data/aerosol_data/CVAO_Nitrate_Prediction_Feb2023.csv") %>%
 #   mutate(date = ymd(date)) %>%
-#   select(date,nitrate_ug_m3)
+#   select(date,nitrate_ml = nitrate_ug_m3)
 
 # Air masses, OH and spec rad ---------------------------------------------
 
