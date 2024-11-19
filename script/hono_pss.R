@@ -120,7 +120,7 @@ daily_pss %>%
   pivot_longer(c(hono_ppt,hono_para,hono_without_nitrate)) %>%
   ggplot(aes(date,value,col = name)) +
   theme_bw() +
-  geom_path() +
+  geom_path(size = 1) +
   labs(x = "Datetime (UTC)",
        y = "HONO (ppt)",
        col = NULL) +
@@ -144,21 +144,22 @@ daily_pss %>%
   # facet_wrap(~year,ncol = 1,scales = "free_x") +
   NULL
 
-# ggsave('hono_timeseries23_para.png',
-#        path = "output/plots",
-#        width = 15.92,
-#        height = 6,
-#        units = 'cm')
+ggsave('hono_timeseries23_para.svg',
+       path = "output/plots/more_final",
+       width = 33.87,
+       height = 7.7,
+       units = 'cm')
 
 # Plotting diurnal --------------------------------------------------------
 
 diurnal = daily_pss %>% 
   mutate(hono_para = ifelse(hono_para < 0,0,hono_para),
-         hono_para_err = hono_para *0.1) %>% 
+         hono_para_err = hono_para *0.1,
+         hono_without_nitrate = ifelse(hono_without_nitrate < 0,0,hono_without_nitrate)) %>% 
   rename(HONO = hono_ppt) %>% 
   filter(is.na(HONO) == FALSE,
          year == 2023) %>% 
-  timeVariation(pollutant = c("HONO","hono_err","hono_para","hono_para_err"))
+  timeVariation(pollutant = c("HONO","hono_err","hono_para","hono_para_err","hono_without_nitrate"))
 
 diurnal_dat = diurnal$data$hour %>% 
   ungroup() %>% 
@@ -167,28 +168,35 @@ diurnal_dat = diurnal$data$hour %>%
   summarise(HONO = mean(HONO,na.rm = T),
             hono_err = mean(hono_err,na.rm = T),
             hono_para = mean(hono_para,na.rm = T),
-            hono_para_err = mean(hono_para_err,na.rm = T))
+            hono_para_err = mean(hono_para_err,na.rm = T),
+            hono_without_nitrate = mean(hono_without_nitrate,na.rm = T))
 
 diurnal_dat %>%
-  ggplot() +
-  geom_path(aes(hour,HONO),size = 2,col = "steelblue1") +
-  geom_ribbon(aes(hour,ymin = HONO - hono_err,ymax = HONO + hono_err),alpha = 0.25,fill = "steelblue1") +
-  geom_path(aes(hour,hono_para),size = 2,col = "black") +
-  geom_ribbon(aes(hour,ymin = hono_para - hono_para_err,ymax = hono_para + hono_para_err),alpha = 0.25,fill = "black") +
+  pivot_longer(c(HONO,hono_para,hono_without_nitrate)) %>% 
+  ggplot(aes(hour,value,col = name)) +
+  geom_path(size = 1) +
+  scale_colour_manual(values = c("darkorange","steelblue1","navyblue"),
+                      labels = c("Measured HONO","PSS HONO with f","PSS HONO without f")) +
+  # geom_path(aes(hour,HONO),size = 2,col = "steelblue1") +
+  # geom_ribbon(aes(hour,ymin = HONO - hono_err,ymax = HONO + hono_err),alpha = 0.25,fill = "steelblue1") +
+  # geom_path(aes(hour,hono_para),size = 2,col = "black") +
+  # geom_ribbon(aes(hour,ymin = hono_para - hono_para_err,ymax = hono_para + hono_para_err),alpha = 0.25,fill = "black") +
   theme_bw() +
   labs(x = "Hour of day (UTC)",
        y = "HONO (ppt)",
        color = NULL) +
   scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
-  theme(axis.title = element_text(size = 28),
-        axis.text = element_text(size = 20)) +
+  theme(legend.position = "top",
+        # axis.title = element_text(size = 28),
+        # axis.text = element_text(size = 20)
+        ) +
   NULL
 
-# ggsave('hono_para_diurnal.svg',
-#        path = "output/plots/departmental_poster",
-#        width = 22.28,
-#        height = 12.58,
-#        units = 'cm')
+ggsave('hono_para_diurnal.svg',
+       path = "output/plots/more_final",
+       width = 16.06,
+       height = 13.88,
+       units = 'cm')
 
 # Doing this for ARNA -----------------------------------------------------
 
@@ -499,21 +507,24 @@ daily_pss_ml %>%
          "ML PSS HONO" = hono_para_ml,
          f_obs = f_calc,
          f_obs_ml = f_calc_ml) %>% 
-  pivot_longer(c("Measured HONO","PSS HONO","ML PSS HONO")) %>% 
-  ggplot(aes(date,value,col = name)) +
-  geom_path(size = 0.75) +
+  # pivot_longer(c(f_para,f_para_ml)) %>% 
+  ggplot(aes(f_para,f_para_ml)) +
+  geom_point() +
+  # geom_path(size = 0.75) +
   theme_bw() +
   theme(legend.position = "none") +
-  facet_grid(rows = vars(name)) +
-  labs(x = NULL,
-       y = "HONO (ppt)",
+  geom_abline(slope = 1, intercept = 0,col = "red") +
+  xlim(40,250) +
+  ylim(40,250) +
+  labs(x = "Parameterised f with measured nitrate",
+       y = "Parameterised f with machine learning nitrate",
        col = NULL) +
   # scale_colour_viridis_c() +
   NULL
 
-ggsave('hono_pss_comparison_ml_nitrate.svg',
+ggsave('f_comparison_ml_nitrate.svg',
        path = "output/plots/comparing_measured_ml",
-       width = 30,
+       width = 12.7,
        height = 12.7,
        units = 'cm')
 

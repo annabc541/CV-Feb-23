@@ -12,17 +12,20 @@ Sys.setenv(TZ = 'UTC')
 #read in full data (data joined in creating_master_df)
 
 dat_full = read.csv("output/data/all_data_utc.csv") %>% 
-  mutate(date = ymd_hms(date))
+  mutate(date = ymd_hms(date),
+         campaign = case_when(date > "2015-11-24" & date < "2015-12-04" ~ "November 2015",
+                              date > "2019-08-15" & date < "2019-08-29" ~ "August 2019",
+                              date > "2020-02-14" & date < "2020-02-27" ~ "February 2020",
+                              date > "2023-02-07" & date < "2023-02-27" ~ "February 2023"))
 
 # Timeseries --------------------------------------------------------------
 
 #plot data in facets colour coded by different parameters
 
-dat %>% 
-  filter(campaign != "no campaign",
-         campaign != "February 2020") %>% 
+dat_full %>% 
+  filter(campaign != "no campaign") %>%
   mutate(sahara = na.approx(sahara,na.rm = F)) %>%
-  timeAverage("1 hour") %>% 
+  # timeAverage("1 hour") %>%
   # fill(sahara,.direction = "up") %>%
   ggplot(aes(date,hono)) +
   geom_path(size = 0.8) +
@@ -30,19 +33,17 @@ dat %>%
   labs(x = NULL,
        y = "HONO (ppt)") +
   theme_bw() +
-  facet_wrap(~factor(campaign,levels = c("November 2015","August 2019","February 2023")),
-             scales = "free",ncol = 1) +
+  facet_wrap(~factor(campaign,levels = c("November 2015","August 2019","February 2020","February 2023")),
+             scales = "free_x",ncol = 1) +
   # theme(legend.position = "top") +
   scale_x_datetime(date_breaks = "1 day",date_labels = "%d/%m") +
   NULL
 
-ggsave('hono_timeseries.svg',
-       path = "output/plots/agu",
-       width = 30,
-       height = 12,
+ggsave('hono_timeseries_ground_campaigns.svg',
+       path = "output/plots/timeseries",
+       width = 33.29,
+       height = 14.8,
        units = 'cm')
-
-
 
 # Data faceted by campaign and parameters of interest ---------------------
 
