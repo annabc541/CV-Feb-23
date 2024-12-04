@@ -42,6 +42,8 @@ dat_full = read.csv("output/data/all_data_utc.csv") %>%
   select(-c(no,no2)) %>% 
   left_join(nox,by = "date")
 
+# write.csv(dat_full,"~/Cape Verde/peroxy_campaign/output/data/all_data_utc_updated_nox.csv",row.names = F)
+
 # Timeseries for feb 2023 -------------------------------------------------
 
 #timeseries 2023 with shading for errors/uncertainty
@@ -69,10 +71,12 @@ test = dat_full%>%
 
 test %>%
   filter(campaign == "February 2023") %>% 
+  mutate(hour = hour(date)) %>% 
+  filter(hour >= 11 & hour <= 15) %>%
   ggplot() +
   theme_bw() +
-  geom_path(aes(date,value,col = name),size = 0.75) +
-  geom_ribbon(aes(date,ymin = min_err_v,ymax = max_err_v,fill = name),alpha = 0.4) +
+  geom_point(aes(date,value,col = name)) +
+  # geom_ribbon(aes(date,ymin = min_err_v,ymax = max_err_v,fill = name),alpha = 0.4) +
   facet_grid(rows = vars(name),scales = "free",labeller = label_parsed) +
   scale_colour_manual(values = c("darkorange","steelblue1","navy")) +
   scale_fill_manual(values = c("darkorange","steelblue1","navy")) +
@@ -98,8 +102,8 @@ air_masses = read.csv("~/Cape Verde/new_CVAO_sector_%_boxes_1.csv") %>%
 
 #plotting
 air_masses %>% 
-  filter(date > "2024-09-07" & date < "2024-09-19") %>% 
-  timeAverage("1 day") %>% 
+  filter(date > "2023-02-07" & date < "2023-02-27") %>% 
+  # timeAverage("1 day") %>% 
   mutate(year = year(date),
          doy = yday(date)) %>%
   pivot_longer(cols = -c(date,year,doy)) %>% 
@@ -138,6 +142,42 @@ air_masses %>%
 #        height = 12,
 #        units = 'cm')
 
+
+
+# Boxplot showing variations in mixing ratios with saharan air ------------
+
+dat_boxplot = dat_full %>% 
+  filter(campaign == "February 2023") %>% 
+  mutate(hour = hour(date),
+         daytime_no = ifelse(hour >= 11 & hour <= 15,no_ppt,NA_real_),
+         daytime_no2 = ifelse(hour >= 11 & hour <= 15,no2_ppt,NA_real_),
+         daytime_hono = ifelse(hour >= 11 & hour <= 15,hono,NA_real_)) %>% 
+  timeAverage("1 day") %>%
+  mutate(sahara_categories = case_when(sahara < 1 ~ "0%",
+                                       sahara > 1 & sahara < 20 ~ "< 20%",
+                                       sahara > 20 ~ "> 20%"))
+
+dat_boxplot %>% 
+  rename(NO = daytime_no,
+         HONO = daytime_hono,
+         `NO[2]` = daytime_no2) %>% 
+  pivot_longer(c(HONO,NO,`NO[2]`)) %>%
+  ggplot(aes(factor(sahara_categories,levels = c("0%","< 20%","> 20%")),value,fill = sahara_categories)) +
+  theme_bw() +
+  geom_boxplot() +
+  facet_wrap(vars(name),labeller = label_parsed,scales = "free") +
+  scale_fill_manual(values = c("darkorange","steelblue1","navy")) +
+  labs(x = "Saharan air mass",
+       y = "Mixing ratio (ppt)",
+       fill = NULL) +
+  theme(legend.position = "None",
+        text = element_text(size =  20))
+
+# ggsave('hono_nox_sahara_boxplot.png',
+#        path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
+#        width = 29,
+#        height = 12,
+#        units = 'cm')
 
 # Diurnals for feb 2023 ---------------------------------------------------
 
@@ -232,7 +272,6 @@ ggsave('hono_nox_timeseries_other_campaigns.png',
 # HONO diurnals from all campaigns ----------------------------------------
 
 diurnal_campaigns = dat_full %>%
-  rename(HONO = hono) %>% 
   timeVariation(pollutant = "hono_err",group = "campaign")
 
 diurnal_campaigns_dat_hono = diurnal_campaigns$data$hour %>% 
@@ -258,6 +297,48 @@ diurnal_campaigns_dat_hono %>%
   scale_fill_manual(values = c("steelblue1","navy","firebrick","darkorange")) +
   scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
   theme(legend.position = "None",
+        text = element_text(size =  20))
+
+ggsave('hono_diurnal_campaigns.png',
+       path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
+       width = 29,
+       height = 12,
+       units = 'cm')
+
+
+# NO diurnals from all campaigns ----------------------------------------
+
+diurnal_campaigns = dat_full %>%
+  timeVariation(pollutant = "no_u_ppt",group = "campaign")
+
+diurnal_campaigns_dat_no = diurnal_campaigns$data$hour %>% 
+  rename(no = Mean)
+diurnal_campaigns_dat_no_err = diurnal_campaigns$data$hour %>% 
+  rename(no_err = Mean) %>% 
+  select(hour,no_err,variable) %>% 
+  ungroup()
+
+diurnal_campaigns_dat_no %>% 
+  left_join(diurnal_campaigns_dat_no_err,by = c("hour","variable")) %>% 
+  left_join(diurnal_campaigns_dat_hono,by = c("hour","variable")) %>% 
+  left_join(diurnal_campaigns_dat_hono_err,by = c("hour","variable")) %>% 
+  rename(HONO = hono,NO = no) %>% 
+  pivot_longer(c(HONO,NO)) %>% 
+  ggplot() +
+  geom_path(aes(hour,value,col = variable),size = 1) +
+  # geom_path(aes(hour,hono_err,col = variable),size = 1) +
+  # geom_ribbon(aes(x = hour,ymin = no - no_err,ymax = no + no_err,fill = variable),alpha = 0.4) +
+  theme_bw() +
+  labs(x = "Hour of day (UTC)",
+       y = "Mixing ratio (ppt)",
+       color = NULL,
+       fill = NULL) +
+  facet_grid(cols = vars(name)) +
+  scale_colour_manual(values = c("darkorange","steelblue1","navy","firebrick"),
+                      breaks = c("November 2015","August 2019","February 2020","February 2023")) +
+  scale_fill_manual(values = c("steelblue1","navy","firebrick","darkorange")) +
+  scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
+  theme(legend.position = "top",
         text = element_text(size =  20))
 
 ggsave('hono_diurnal_campaigns.png',

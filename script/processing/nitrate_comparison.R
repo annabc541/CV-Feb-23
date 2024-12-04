@@ -15,16 +15,17 @@ nitrate_dat_ml = read.csv("data/aerosol_data/CVAO_Nitrate_Prediction_Feb2023.csv
 aerosols23 %>% 
   left_join(nitrate_dat_ml,by = "date") %>% 
   ggplot(aes(measured_nitrate,machine_learning_nitrate)) +
-  geom_point() +
-  geom_abline(aes(slope = 1,intercept = 0),col = "red") +
+  geom_point(col = "navy",size = 2) +
+  geom_abline(aes(slope = 1,intercept = 0),col = "darkorange", size = 1) +
   theme_bw() +
-  xlim(0.25,2.25) +
-  ylim(0.25,2.25) +
+  xlim(0,2.25) +
+  ylim(0,2.25) +
   labs(x = "Measured nitrate (ug/m3)",
-       y = "Nitrate from machine learning (ug/m3)")
+       y = "ML nitrate (ug/m3)") +
+  theme(text = element_text(size = 20))
 
-ggsave('nitrate_comparison.svg',
-       path = "output/plots/comparing_measured_ml",
-       width = 12.7,
-       height = 12.7,
+ggsave('nitrate_comparison_feb23.png',
+       path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
+       width = 13,
+       height = 13,
        units = 'cm')
