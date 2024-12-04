@@ -72,11 +72,10 @@ test = dat_full%>%
 test %>%
   filter(campaign == "February 2023") %>% 
   mutate(hour = hour(date)) %>% 
-  filter(hour >= 11 & hour <= 15) %>%
   ggplot() +
   theme_bw() +
-  geom_point(aes(date,value,col = name)) +
-  # geom_ribbon(aes(date,ymin = min_err_v,ymax = max_err_v,fill = name),alpha = 0.4) +
+  geom_path(aes(date,value,col = name),size = 0.75) +
+  geom_ribbon(aes(date,ymin = min_err_v,ymax = max_err_v,fill = name),alpha = 0.4) +
   facet_grid(rows = vars(name),scales = "free",labeller = label_parsed) +
   scale_colour_manual(values = c("darkorange","steelblue1","navy")) +
   scale_fill_manual(values = c("darkorange","steelblue1","navy")) +
@@ -179,34 +178,25 @@ dat_boxplot %>%
 #        height = 12,
 #        units = 'cm')
 
-# Diurnals for feb 2023 ---------------------------------------------------
+# Diurnal with SE ---------------------------------------------------------
 
 diurnal = dat_full %>%
   filter(campaign == "February 2023") %>% 
-  rename(HONO = hono,NO = no_ppt,'NO[2]' = no2_ppt) %>% 
-  filter(is.na(HONO) == FALSE) %>% 
-  timeVariation(pollutant = c("HONO","NO","NO[2]","hono_err","no_u_ppt","no2_u_ppt"))
+  filter(is.na(hono) == FALSE) %>%
+  mutate(hour = hour(date)) %>% 
+  group_by(hour) %>%
+  select(hono,no = no_ppt,no2 = no2_ppt) %>% 
+  summarise(across(where(is.numeric),list(mean = ~mean(.,na.rm = T),sd = ~sd(.,na.rm = T),se = ~sd(., na.rm = TRUE) / sqrt(length(.))))) %>% 
+  ungroup()
 
-diurnal_dat1 = diurnal$data$hour
-
-diurnal_dat2 = diurnal_dat1 %>% 
-  ungroup() %>% 
-  pivot_wider(names_from = variable,values_from = Mean) %>% 
-  group_by(hour) %>% 
-  summarise(HONO = mean(HONO,na.rm = T),
-            hono_err = mean(hono_err,na.rm = T),
-            NO = mean(NO,na.rm = T),
-            `NO[2]` = mean(`NO[2]`,na.rm = T),
-            no_u_ppt = mean(no_u_ppt,na.rm = T),
-            no2_u_ppt = mean(no2_u_ppt,na.rm = T))
-
-diurnal_dat2 %>% 
-  mutate(hono_err_plot_max = HONO + 2 * hono_err,
-         hono_err_plot_min = HONO - 2 * hono_err,
-         no_err_plot_max = NO + no_u_ppt,
-         no_err_plot_min = NO - no_u_ppt,
-         no2_err_plot_max = `NO[2]` + no2_u_ppt,
-         no2_err_plot_min = `NO[2]` - no2_u_ppt) %>% 
+diurnal %>% 
+  mutate(hono_err_plot_max = hono_mean + hono_se,
+         hono_err_plot_min = hono_mean - hono_se,
+         no_err_plot_max = no_mean + no_se,
+         no_err_plot_min = no_mean - no_se,
+         no2_err_plot_max = no2_mean + no2_se,
+         no2_err_plot_min = no2_mean - no2_se) %>% 
+  rename(HONO = hono_mean,NO = no_mean,'NO[2]' = no2_mean) %>%
   pivot_longer(c(HONO,NO,`NO[2]`)) %>% 
   pivot_longer(cols = c(hono_err_plot_max,no_err_plot_max,no2_err_plot_max),
                values_to = "max_err_v",names_to = "max_err_n") %>% 
@@ -220,7 +210,7 @@ diurnal_dat2 %>%
   theme_bw() +
   geom_path(aes(hour,value,col = name),size = 0.75) +
   geom_ribbon(aes(hour,ymin = min_err_v,ymax = max_err_v,fill = name),alpha = 0.25) +
-  facet_wrap(vars(name),scales = "free",labeller = label_parsed) +
+  facet_grid(rows = vars(name),scales = "free",labeller = label_parsed) +
   scale_colour_manual(values = c("darkorange","steelblue1","navy")) +
   scale_fill_manual(values = c("darkorange","steelblue1","navy")) +
   # scale_x_datetime(date_breaks = "2 days",date_labels = "%d %b") +
@@ -230,12 +220,11 @@ diurnal_dat2 %>%
   labs(x = "Hour of day (UTC)",
        y = "Mixing ratio (ppt)")
 
-ggsave('hono_diurnal23.png',
-       path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
-       width = 29,
-       height = 14,
-       units = 'cm')
-
+# ggsave('hono_diurnal23.png',
+#        path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
+#        width = 29,
+#        height = 14,
+#        units = 'cm')
 
 # Other campaigns ---------------------------------------------------------
 
@@ -359,6 +348,46 @@ rects = data.frame(xstart = c(0),
                    xend = c(500),
                    cols = c("MBL"))
 
+feb_dat = dat_full %>% 
+  filter(campaign == "February 2023") %>% 
+  select(date,hono,hono_err,no_ppt,no_u_ppt,no2_ppt,no2_u_ppt,campaign) %>% 
+  mutate(hono_max_err = hono + 2 * hono_err,
+         hono_min_err = hono - 2 * hono_err,
+         no_max_err = no_ppt + no_u_ppt,
+         no_min_err = no_ppt - no_u_ppt,
+         no2_max_err = no2_ppt + no2_u_ppt,
+         no2_min_err = no2_ppt - no2_u_ppt,
+         hour = hour(date),
+         altitude_m = 7.5) %>% 
+  rename(HONO = hono,
+         NO = no_ppt,
+         `NO[2]` = no2_ppt) %>% 
+  filter(hour >= 11 & hour <= 15) %>% 
+  timeAverage("1 day") %>%
+  mutate(campaign = "February 2023") %>%
+  select(date,HONO,NO,`NO[2]`,hono_max_err:no2_min_err,altitude_m,campaign)
+
+arna_plot_mean = arna_dat %>% 
+  mutate(campaign = ifelse(start_time < "2020-01-01","ARNA 2019","ARNA 2020"),
+         hono_max_err = hono_ppt_v + hono_uncertainty_ppt,
+         hono_min_err = hono_ppt_v - hono_uncertainty_ppt,
+         no_max_err = no_ppt_v + no_uncertainty_ppt,
+         no_min_err = no_ppt_v - no_uncertainty_ppt,
+         no2_max_err = no2_ppt_v + no2_uncertainty_ppt,
+         no2_min_err = no2_ppt_v - no2_uncertainty_ppt) %>% 
+  rename(HONO = hono_ppt_v,
+         NO = no_ppt_v,
+         `NO[2]` = no2_ppt_v,
+         date = start_time) %>%
+  select(date,HONO,NO,`NO[2]`,hono_max_err:no2_min_err,altitude_m,campaign) %>% 
+  bind_rows(feb_dat) %>% 
+  mutate(categories = case_when(altitude_m == 7.5 ~ "ground",
+                                altitude_m > 7.5 & altitude_m < 500 ~ "mbl",
+                                altitude_m > 500 ~"ft")) %>% 
+  group_by(categories) %>% 
+  select(HONO,NO,`NO[2]`) %>% 
+  summarise(across(where(is.numeric),list(mean = ~mean(.,na.rm = T),sd = ~sd(.,na.rm = T),se = ~sd(., na.rm = TRUE) / sqrt(length(.)))))
+
 arna_plot = arna_dat %>% 
   mutate(campaign = ifelse(start_time < "2020-01-01","ARNA 2019","ARNA 2020"),
          hono_max_err = hono_ppt_v + hono_uncertainty_ppt,
@@ -369,7 +398,10 @@ arna_plot = arna_dat %>%
          no2_min_err = no2_ppt_v - no2_uncertainty_ppt) %>% 
   rename(HONO = hono_ppt_v,
          NO = no_ppt_v,
-         `NO[2]` = no2_ppt_v) %>% 
+         `NO[2]` = no2_ppt_v,
+         date = start_time) %>%
+  select(date,HONO,NO,`NO[2]`,hono_max_err:no2_min_err,altitude_m,campaign) %>% 
+  bind_rows(feb_dat) %>% 
   pivot_longer(c(HONO,NO,`NO[2]`)) %>% 
   pivot_longer(cols = c(hono_max_err,no_max_err,no2_max_err),
                values_to = "max_err_v",names_to = "max_err_n") %>% 
@@ -387,7 +419,7 @@ arna_plot %>%
   geom_pointrange(aes(y = altitude_m, col = campaign, x = value,
                       xmin = min_err_v,xmax = max_err_v)) +
   geom_rect(data = rects, aes(ymin =xstart, ymax = xend, xmin = -Inf, xmax = Inf, fill = cols), alpha = 0.1) +
-  scale_colour_manual(values = c("darkorange","navy")) +
+  scale_colour_manual(values = c("darkorange","navy","springgreen4")) +
   scale_fill_manual(values = c("steelblue1")) +
   facet_grid(cols = vars(name),scales = "free",labeller = label_parsed) +
   labs(x = "Mixing ratio (ppt)",
@@ -397,8 +429,8 @@ arna_plot %>%
   theme(legend.position = "top",
         text = element_text(size =  20))
 
-ggsave('hono_nox_arna.png',
-       path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
-       width = 29,
-       height = 15,
-       units = 'cm')
+# ggsave('hono_nox_arna_feb23.png',
+#        path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
+#        width = 29,
+#        height = 15,
+#        units = 'cm')
