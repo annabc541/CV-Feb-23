@@ -118,35 +118,26 @@ remove(met_data23,met_data_historic)
 
 # NOx data ----------------------------------------------------------------
 
-#update with data from EBAS?
+#reading in nox data with uncertainties
+#from ebas data wrangling R script
 
-nox15 = read.csv("data/nox_data/nox15.csv") %>% 
-  mutate(date = ymd_hms(X)) %>% 
-  filter(date > "2015-11-01") %>% 
-  timeAverage("1 hour") %>% 
-  select(date,no = NO_Conc_art_corrected,no2 = NO2_Conc_art_corrected)
+no15 = read.csv("data/nox_data_thesis/no15.csv") %>% 
+  mutate(date = ymd_hms(date)) %>% 
+  select(date,no_ppt = no_ppt_ebas,no_u_ppt)
 
-nox19 = read.csv("data/nox_data/nox19.csv") %>% 
-  mutate(date = ymd_hms(X)) %>% 
-  filter(date > "2019-08-14" & date < "2019-08-30") %>% 
-  timeAverage("1 hour") %>% 
-  select(date,no = NO_Conc_art_corrected,no2 = NO2_Conc_diode)
+nox19 = read.csv("data/nox_data_thesis/nox19.csv") %>% 
+  mutate(date = ymd_hms(date))
 
-nox20 = read.csv("data/nox_data/nox20.csv") %>% 
-  mutate(date = ymd_hms(X)) %>% 
-  filter(date > "2020-02-13" & date < "2020-02-28") %>% 
-  timeAverage("1 hour") %>% 
-  select(date,no = NO_Conc_art_corrected,no2 = NO2_Conc_diode)
+nox20 = read.csv("data/nox_data_thesis/nox20.csv") %>% 
+  mutate(date = ymd_hms(date))
 
-nox23 = read.csv("data/nox_data/nox23.csv") %>% 
-  mutate(date = ymd_hms(X)) %>% 
-  filter(date > "2023-02-07" & date < "2023-02-27") %>% 
-  timeAverage("1 hour") %>%
-  select(date,no = NO_Conc_art_corrected,no2 = NO2_Conc_diode)
+nox23 = read.csv("D:/Documents/Cape Verde/nox/processing/ozone_correction/processed_data/nox2023.csv") %>% 
+  mutate(date = ymd_hms(date))
 
-nox = bind_rows(nox15,nox19,nox20,nox23)
+nox = bind_rows(no15,nox19,nox20,nox23) %>% 
+  select(-c(no_flag,no2_flag,no_lod_ppt,no2_lod_ppt))
 
-remove(nox15,nox19,nox20,nox23)
+remove(no15,nox19,nox20,nox23)
 
 # HONO data ---------------------------------------------------------------
 
@@ -186,6 +177,7 @@ df_list = list(hono,nox,oh_dat,all_aerosols,spec_rad,met_data,air_mass)
 
 dat = df_list %>% reduce(full_join,by = "date") %>% 
   arrange(date) %>% 
+  timeAverage("1 hour") %>% #for some reason 2019 and 2020 data is duplicated, averaging to fix that
   mutate(year = year(date),
          month = month(date),
          keep_data = case_when(year == 2015 & month >= 11 ~ 1,
@@ -193,7 +185,7 @@ dat = df_list %>% reduce(full_join,by = "date") %>%
                                year == 2020 & month == 2 ~ 1,
                                year == 2023 & month == 2 ~ 1)) %>% 
   filter(keep_data == 1) %>% 
-  select(date,month,year,everything(),-keep_data)
+  select(date,month,year,everything(),-keep_data) 
 
 #currently not modifying, filling or converting any of the data assembled, leave that to analysis codes
 
@@ -202,4 +194,4 @@ dat = df_list %>% reduce(full_join,by = "date") %>%
   #                            TRUE ~ (nitrate_ug_m3 * 10^-12 *6.022 * 10^23)/62.004))
 
 #with measured nitrate from 2023
-# write.csv(dat,"output/data/all_data_utc.csv",row.names = F)
+write.csv(dat,"output/data/all_data_utc_updated_nox_hono.csv",row.names = F)

@@ -168,7 +168,7 @@ zero_avg = zeroes_grouped %>%
 #interpolate between zeroes and subtract zeroes from measurements
 zeroed2 = zero_flag %>% 
   mutate(idx = 1:nrow(.)) %>% 
-  left_join(zero_avg) %>% 
+  left_join(zero_avg)
   mutate(ch1_zeroes = na.approx(ch1_zeroes,na.rm = F),
          ch2_zeroes = na.approx(ch2_zeroes,na.rm = F)) %>%
   fill(ch1_zeroes,ch2_zeroes,.direction = "up") %>%
@@ -264,7 +264,7 @@ night_zeroed_plots = night_zeroed %>%
 
 zero_plots_thesis = zeroed1 %>% 
   bind_rows(zeroed2) %>% 
-  arrange(date) %>% 
+  arrange(date)
   mutate(zeroes_used = ifelse(date < "2023-02-19","ZA values","Nighttime values"),
          reagent_batch = ifelse(date < "2023-02-17 09:00","First batch of reagents","Second batch of reagents")) %>% 
   select(date:zeroing,ch1_zeroes,ch2_zeroes,reagent_batch,zeroes_used) %>% 
@@ -275,23 +275,26 @@ zero_plots_thesis %>%
   rename(`Channel 1` = ch1_zeroes,
          `Channel 2` = ch2_zeroes) %>% 
   pivot_longer(c(`Channel 1`,`Channel 2`)) %>% 
-  ggplot(aes(date,value,col = zeroes_used)) +
+  mutate(reagent_batch = ifelse(date < "2023-02-17 09:00","First batch of reagents","Second batch of reagents")) %>% 
+  ggplot(aes(date,value,col = reagent_batch)) +
   theme_bw() +
   labs(x = NULL,
        y = "Zeroes absorbance",
-       col = "Zeroing with") +
+       col = NULL) +
   scale_colour_manual(values = c("steelblue1","darkorange")) +
   theme(legend.position = "top",
-        text = element_text(size = 16)) +
-  geom_vline(xintercept = as.POSIXct("2023-02-19"),col = "red",linewidth = 1) +
-  geom_point() +
-  facet_grid(rows = vars(name),cols = vars(reagent_batch),scales = "free")
+        text = element_text(size = 16),
+        panel.spacing = unit(1,"lines")) +
+  scale_x_datetime(date_breaks = "2 day",date_labels = "%d %b") +
+  # geom_vline(xintercept = as.POSIXct("2023-02-19"),col = "red",linewidth = 1) +
+  geom_point(size = 2.25) +
+  facet_grid(rows = vars(name),scales = "free")
 
-# ggsave('lopap_za_zeroes_feb23.png',
-#        path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
-#        width = 29,
-#        height = 12,
-#        units = 'cm')
+ggsave('lopap_za_zeroes_feb23.png',
+       path = "D:/Documents/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
+       width = 29,
+       height = 12,
+       units = 'cm')
 
 night_zeroed_plots %>% 
   pivot_longer(c(ch1_night,ch2_night)) %>% 
