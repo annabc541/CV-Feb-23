@@ -64,11 +64,11 @@ test %>%
   labs(x = NULL,
        y = "Mixing ratio (ppt)")
 
-# ggsave('hono_nox_timeseries23.png',
-#        path = "D:/Documents/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
-#        width = 29,
-#        height = 12,
-#        units = 'cm')
+ggsave('hono_nox_timeseries23.png',
+       path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
+       width = 29,
+       height = 12,
+       units = 'cm')
 
 # Air masses for feb 2023 -------------------------------------------------
 
@@ -218,10 +218,10 @@ ggsave('hono_nox_diurnal23.png',
 
 test %>% 
   filter(campaign != "no campaign",
-         campaign != "February 2023") %>% 
+         campaign != "February 2020") %>% 
   mutate(campaign2 = case_when(campaign == "November 2015" ~"November~2015",
                                campaign == "August 2019" ~"August~2019",
-                               campaign == "February 2020" ~"February~2020")) %>%
+                               campaign == "February 2023" ~"February~2023")) %>%
   ggplot() +
   theme_bw() +
   geom_path(aes(date,value,col = name),size = 0.75,group = 1) +
@@ -231,7 +231,7 @@ test %>%
        col = NULL) +
   scale_colour_manual(values = c("darkorange","steelblue1","navy")) +
   scale_fill_manual(values = c("darkorange","steelblue1","navy")) +
-  facet_grid(cols = vars(factor(campaign2,levels = c("November~2015","August~2019","February~2020"))),
+  facet_grid(cols = vars(factor(campaign2,levels = c("November~2015","August~2019","February~2023"))),
              scales = "free",rows = vars(name),labeller = label_parsed) +
   # theme(legend.position = "top") +
   scale_x_datetime(date_breaks = "4 day",date_labels = "%d/%m") +
@@ -239,7 +239,7 @@ test %>%
         text = element_text(size =  20)) +
   NULL
 
-ggsave('hono_nox_timeseries_other_campaigns.png',
+ggsave('hono_nox_timeseries_not_feb20.png',
        path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
        width = 32,
        height = 12,
@@ -248,7 +248,9 @@ ggsave('hono_nox_timeseries_other_campaigns.png',
 # HONO and NO diurnals from all campaigns ----------------------------------------
 
 diurnal = dat_full %>%
-  filter(is.na(hono) == FALSE) %>%
+  filter(is.na(hono) == FALSE,
+         campaign != "no campaign",
+         campaign != "February 2020") %>%
   mutate(hour = hour(date)) %>% 
   group_by(campaign,hour) %>%
   select(hono,no = no_ppt,no2 = no2_ppt) %>% 
@@ -284,10 +286,10 @@ diurnal %>%
   geom_path(aes(hour,value,col = campaign),size = 0.75) +
   geom_ribbon(aes(hour,ymin = min_err_v,ymax = max_err_v,fill = campaign),alpha = 0.25) +
   facet_grid(cols = vars(name),scales = "free",labeller = label_parsed) +
-  scale_colour_manual(values = c("darkolivegreen3","springgreen4","springgreen3","darkorange"),
-                      breaks = c("November 2015","August 2019","February 2020","February 2023")) +
-  scale_fill_manual(values = c("darkolivegreen3","springgreen4","springgreen3","darkorange"),
-                    breaks = c("November 2015","August 2019","February 2020","February 2023")) +
+  scale_colour_manual(values = c("darkolivegreen3","springgreen4","darkorange"),
+                      breaks = c("November 2015","August 2019","February 2023")) +
+  scale_fill_manual(values = c("darkolivegreen3","springgreen4","darkorange"),
+                    breaks = c("November 2015","August 2019","February 2023")) +
   # scale_x_datetime(date_breaks = "2 days",date_labels = "%d %b") +
   theme(legend.position = "top",
         text = element_text(size =  20)) +
@@ -297,11 +299,11 @@ diurnal %>%
        col = NULL,
        fill = NULL)
 
-# ggsave('hono_no_diurnals_all_campaigns.png',
-#        path = "D:/Documents/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
-#        width = 29,
-#        height = 14,
-#        units = 'cm')
+ggsave('hono_no_diurnals_not_feb.png',
+       path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
+       width = 29,
+       height = 14,
+       units = 'cm')
 
 # ARNA flight data --------------------------------------------------------
 

@@ -10,22 +10,21 @@ Sys.setenv(TZ = 'UTC')
 
 #calculates HONO using Matt's parameterisation for enhancement factor (f)
 
-
 # Constants ---------------------------------------------------------------
 
 kp = 3.3 * 10^-11 #rate constant for oh + no -> hono (from Atkinson et al. 2004) in cm3 molecule-1 s-1
 kl = 6 * 10^-12 #rate constant for oh + hono -> h2o + no2 (from Atkinson et al. 2004) in cm3 molecule-1 s-1
 dv = 0.3 #deardroff velocity, value used by Simone, in m s-1
-molar_mass = data.frame(
-  no3 = 62.004,
-  so4 = 96.06,
-  cl = 35.45,
-  na = 22.99,
-  nh4 = 18.039,
-  mg = 24.305,
-  ca = 40.078,
-  k = 39.098
-)
+# molar_mass = data.frame(
+#   no3 = 62.004,
+#   so4 = 96.06,
+#   cl = 35.45,
+#   na = 22.99,
+#   nh4 = 18.039,
+#   mg = 24.305,
+#   ca = 40.078,
+#   k = 39.098
+# )
 
 # c("no3","so4","cl","na","nh4","mg","ca","k"),
 # molar_mass = c(62.004,96.06,35.45,22.99,18.039,24.305,40.078,39.098)
@@ -46,8 +45,8 @@ ppt_to_ug_m3 <- function(x,molar_mass){
   z = (y * molar_mass * 10^12) / (6.022 * 10^23)
   z
   }
-ss_aerosol <- function(na,x){y = na * (x/468)}
-nss_aerosol <- function(ss,x){y = x - ss}
+# ss_aerosol <- function(na,x){y = na * (x/468)}
+# nss_aerosol <- function(ss,x){y = x - ss}
 
 NormalisedMeanBias <- function(modelled, observations, na.rm){
   mod <- modelled
@@ -63,7 +62,7 @@ NormalisedMeanBias <- function(modelled, observations, na.rm){
 
 dat = read.csv("output/data/all_data_utc_updated_nox_hono.csv") %>% 
   # filter(year == 2023) %>%
-  mutate(date = dmy_hms(date))
+  mutate(date = ymd_hms(date))
 
 #unit conversions and data filled in where necessary
 dat_parameterisation = dat %>% 
@@ -76,7 +75,11 @@ dat_parameterisation = dat %>%
          nitrate_molecules_cm3 = case_when(year == 2020 ~ 1.20 * 10^10,
                              TRUE ~ (nitrate_ug_m3 * 10^-12 *6.022 * 10^23)/62.004),
          nitrate_nmol_m3 = (nitrate_molecules_cm3 * 10^15)/(6.022*10^23),
-         hour = hour(date)) %>% 
+         hour = hour(date),
+         campaign = case_when(date > "2015-11-24" & date < "2015-12-04" ~ "November 2015",
+                              date > "2019-08-15" & date < "2019-08-29" ~ "August 2019",
+                              date > "2020-02-14" & date < "2020-02-27" ~ "February 2020",
+                              date > "2023-02-07" & date < "2023-02-27" ~ "February 2023")) %>% 
   fill(oh, oh_precision) %>% 
   select(date,hour,month,year,everything()) %>% 
   rename(hono_ppt = hono,oh_molecules_cm3 = oh)
@@ -104,41 +107,6 @@ hourly_pss = dat_parameterisation %>%
 # lifetime_mean = mean(hourly_pss$lifetime,na.rm = T) /60
 # lifetime_median = median(hourly_pss$lifetime,na.rm = T) /60
 
-# hourly_pss = dat_parameterisation %>%
-#   filter(campaign == "February 2023") %>%  #only looking at daytime values
-#   mutate(lifetime = 1/jhono,
-#          h = lifetime * dv,
-#          kdep = 0.01/h,
-#          production_without_nitrate = kp * oh_molecules_cm3 * ppt_to_molecules_cm3(no_ppt),
-#          loss = (jhono + (kl*oh_molecules_cm3) + kdep) * ppt_to_molecules_cm3(hono_ppt),
-#          missing_production = (loss - production_without_nitrate), #molecule cm-3 s-1
-#          f_calc = missing_production/(jhno3 * nitrate_molecules_cm3))
-# 
-# diurnal_f = hourly_pss %>%
-#   group_by(hour) %>%
-#   select(f_calc) %>% 
-#   summarise(across(where(is.numeric),list(mean = ~mean(.,na.rm = T),sd = ~sd(.,na.rm = T),se = ~sd(., na.rm = TRUE) / sqrt(length(.))))) %>% 
-#   ungroup()
-# 
-# diurnal_f %>% 
-#   mutate(f_calc_mean = ifelse(hour >= 8 & hour <= 19,f_calc_mean,NA_real_),
-#          f_calc_plot_max = f_calc_mean + f_calc_se,
-#          f_calc_plot_min = f_calc_mean - f_calc_se) %>% 
-#   ggplot() +
-#   theme_bw() +
-#   geom_path(aes(hour,f_calc_mean),size = 0.75,col = "navy") +
-#   geom_ribbon(aes(hour,ymin = f_calc_plot_min,ymax = f_calc_plot_max),alpha = 0.25,fill = "navy") +
-#   scale_x_continuous(breaks = c(0,4,8,12,16,20)) +
-#   labs(x = "Hour of day (UTC)",
-#        y = expression(f[obs])) +
-#   theme(text = element_text(size = 16))
-# 
-# ggsave('f_obs_diurnal.png',
-#        path = "D:/Documents/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
-#        width = 37,
-#        height = 14,
-#        units = 'cm')
-
 daily_f = hourly_pss %>% 
   timeAverage("1 day") %>% 
   select(date,f_para_simone,f_para_matt,f_calc,lifetime) %>% 
@@ -160,6 +128,88 @@ daily_pss = dat_parameterisation %>%
                                                      / (jhono + (kl*oh_molecules_cm3) + kdep)),
          nmb_simone = ifelse(hour >= 11 & hour <= 15,NormalisedMeanBias(hono_para_simone,hono_ppt,na.rm = T),NA_real_),
          nmb_matt = ifelse(hour >= 11 & hour <= 15,NormalisedMeanBias(hono_para_matt,hono_ppt,na.rm = T),NA_real_))
+
+# Enhancement diurnals ----------------------------------------------------
+
+dat_f_diurnals = dat_parameterisation %>%
+  filter(campaign == "February 2023") %>%
+  mutate(lifetime = 1/jhono,
+         h = lifetime * dv,
+         kdep = 0.01/h,
+         production_without_nitrate = kp * oh_molecules_cm3 * ppt_to_molecules_cm3(no_ppt),
+         loss = (jhono + (kl*oh_molecules_cm3) + kdep) * ppt_to_molecules_cm3(hono_ppt),
+         missing_production = (loss - production_without_nitrate), #molecule cm-3 s-1
+         f_calc = missing_production/(jhno3 * nitrate_molecules_cm3),
+         f_para_simone = (385.7)/(1 + (0.19 * nitrate_nmol_m3)),
+         f_para_matt = (5.02*10^8)/(1 + (7.19 * 10^5 * nitrate_nmol_m3)),
+         f_calc_jhno3 = f_calc * jhno3,
+         f_a_jhno3 = f_para_simone * jhno3,
+         f_r_jhno3 = f_para_matt *jhno3) %>% 
+  select(date,hour,jhno3,f_calc:f_r_jhno3,missing_production,loss,jhono,production_without_nitrate)
+
+diurnal_f = dat_f_diurnals %>%
+  group_by(hour) %>%
+  select(-date) %>%
+  summarise(across(where(is.numeric),list(mean = ~mean(.,na.rm = T),sd = ~sd(.,na.rm = T),se = ~sd(., na.rm = TRUE) / sqrt(length(.))))) %>%
+  ungroup()
+
+diurnal_f %>% 
+  mutate(f_calc_plot_max = jhno3_mean + jhno3_se,
+         f_calc_plot_min = jhno3_mean - jhno3_se) %>% 
+  filter(hour >= 8 & hour <= 19) %>% 
+  ggplot() +
+  theme_bw() +
+  geom_path(aes(hour,jhno3_mean),col = "darkorange",size = 0.75) +
+  geom_ribbon(aes(hour,ymin = f_calc_plot_min,ymax = f_calc_plot_max),fill = "darkorange",alpha = 0.25) +
+  theme(text = element_text(size =  20)) +
+  scale_x_continuous(breaks = c(8:19)) +
+  labs(x = "Hour of day (UTC)",
+       y = expression(f[obs]),
+       col = NULL,
+       fill = NULL)
+
+diurnal_f %>%
+  mutate(f_calc_plot_max = (f_calc_jhno3_mean + f_calc_jhno3_se)* 10^5,
+         f_calc_plot_min = (f_calc_jhno3_mean - f_calc_jhno3_se) * 10^5,
+         f_simone_plot_max = (f_a_jhno3_mean + f_a_jhno3_se) * 10^5,
+         f_simone_plot_min = (f_a_jhno3_mean - f_a_jhno3_se) * 10^5,
+         f_matt_plot_max = (f_r_jhno3_mean + f_r_jhno3_se) * 10^5,
+         f_matt_plot_min = (f_r_jhno3_mean - f_r_jhno3_se) * 10^5,
+         "f[obs]" = f_calc_jhno3_mean * 10^5,
+         "f[Andersen]" = f_a_jhno3_mean * 10^5,
+         "f[Rowlinson]" = f_r_jhno3_mean * 10^5) %>% 
+  pivot_longer(c("f[obs]","f[Andersen]","f[Rowlinson]")) %>% 
+  pivot_longer(cols = c(f_calc_plot_max,f_simone_plot_max,f_matt_plot_max),values_to = "max_err_v",names_to = "max_err_n") %>% 
+  pivot_longer(cols = c(f_calc_plot_min,f_simone_plot_min,f_matt_plot_min),values_to = "min_err_v",names_to = "min_err_n") %>% 
+  mutate(flag = case_when(name == "f[obs]" & min_err_n == "f_calc_plot_min" & max_err_n == "f_calc_plot_max" ~ "obs",
+                          name == "f[Andersen]" & min_err_n == "f_simone_plot_min" & max_err_n == "f_simone_plot_max" ~ "simone",
+                          name == "f[Rowlinson]" & min_err_n == "f_matt_plot_min" & max_err_n == "f_matt_plot_max" ~ "matt")) %>%
+  filter(hour >= 8 & hour <= 19, is.na(flag) == F) %>% 
+  ggplot() +
+  theme_bw() +
+  geom_path(aes(hour,value,col = name),size = 0.75) +
+  geom_ribbon(aes(hour,ymin = min_err_v,ymax = max_err_v,fill = name),alpha = 0.25) +
+  # facet_wrap(~name,scales = "free") +
+  scale_colour_manual(values = c("darkorange","navy","steelblue1"),
+                      breaks = c("f[obs]","f[Andersen]","f[Rowlinson]"),
+                      labels = c(expression(f[obs]),expression(f[Andersen]),expression(f[Rowlinson]))) +
+  scale_fill_manual(values = c("darkorange","navy","steelblue1"),
+                    breaks = c("f[obs]","f[Andersen]","f[Rowlinson]"),
+                    labels = c(expression(f[obs]),expression(f[Andersen]),expression(f[Rowlinson]))) +
+  # scale_x_datetime(date_breaks = "2 days",date_labels = "%d %b") +
+  theme(legend.position = "top",
+        text = element_text(size =  20)) +
+  scale_x_continuous(breaks = c(8:19)) +
+  labs(x = "Hour of day (UTC)",
+       y = expression(f~"\u00D7"~j[HNO[3]]~("\u00D7"~10^{-5})),
+       col = NULL,
+       fill = NULL)
+ 
+# ggsave('f_obs_diurnal.png',
+#        path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
+#        width = 25,
+#        height = 10,
+#        units = 'cm')
 
 # Plotting timeseries -----------------------------------------------------
 
@@ -199,11 +249,11 @@ daily_pss %>%
   # facet_wrap(~year,ncol = 1,scales = "free_x") +
   NULL
 
-ggsave('hono23_timeseries_pss_para.png',
-       path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
-       width = 37,
-       height = 14,
-       units = 'cm')
+# ggsave('hono23_timeseries_pss_para.png',
+#        path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
+#        width = 37,
+#        height = 14,
+#        units = 'cm')
 
 # Plotting diurnal --------------------------------------------------------
 
@@ -248,11 +298,11 @@ diurnal %>%
        col = NULL,
        fill = NULL)
 
-ggsave('hono_para_diurnal.png',
-       path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
-       width = 29,
-       height = 14,
-       units = 'cm')
+# ggsave('hono_para_diurnal.png',
+#        path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
+#        width = 29,
+#        height = 14,
+#        units = 'cm')
 
 # Doing this for ARNA -----------------------------------------------------
 
@@ -333,7 +383,7 @@ arna_pss %>%
 
 # ARNA and ground f ratio with aerosol composition ------------------------------------------
 
-arna_ground = hourly_pss %>% 
+arna_ground = daily_pss %>% 
   timeAverage("1 day") %>%
   mutate(campaign = case_when(year == 2015 ~ "November 2015",
                               year == 2019 ~ "August 2019",
@@ -391,32 +441,77 @@ r_squared <- summary(model)$r.squared
 #        units = 'cm')
 
 
+
+# With 2024 data ----------------------------------------------------------
+
+hono_sep24 = read.csv("~/Cape Verde/cvao_hono_sep24/output/processed_data/hono_sep24_pss_night_za.csv") %>% 
+  rename_at(vars(ends_with("_za")), ~str_remove(.,"_za")) %>% 
+  mutate(date = ymd_hms(date),
+         f_ratio_matt = f_calc/f_para_matt,
+         f_ratio_simone = f_calc/f_para_simone) %>% 
+  rename(hono_ppt = hono) %>% 
+  timeAverage("1 day")
+
+arna_ground24 = arna_ground %>% 
+  bind_rows(hono_sep24) %>% 
+  mutate(campaign = ifelse(date > "2024-01-01","September 2024 (ZA zeroes)",campaign))
+
+arna_ground24 %>% 
+  filter(is.na(campaign) == F,
+         is.na(hono_ppt) == F,
+         altitude < 500 | is.na(altitude) == T,
+         campaign != "November 2015",
+         campaign != "August 2019",
+         campaign != "February 2020") %>% 
+  rename("Andersen" = f_ratio_simone,
+         "Rowlinson" = f_ratio_matt) %>% 
+  pivot_longer(c("Andersen","Rowlinson")) %>% 
+  ggplot(aes(rh,value,col = campaign)) +
+  geom_point(size = 2.5) +
+  theme_bw() +
+  facet_grid(cols = vars(name)) +
+  scale_colour_manual(values = c("steelblue1","navy","darkolivegreen3","springgreen4","darkorange","goldenrod1"),
+                      breaks = c("ARNA 2019","ARNA 2020","November 2015","August 2019","February 2023","September 2024 (ZA zeroes)")) +
+  labs(x = "RH (%)",
+       y = expression(f[obs]/f[parametrised]),
+       col = NULL) +
+  theme(legend.position = "top",
+        text = element_text(size = 20)) +
+  NULL
+
+ggsave('f_ratio_vs_rh_all_campaigns_york_mbl_za.png',
+       path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images/sep24",
+       width = 30,
+       height = 12,
+       units = 'cm')
 # f ratio with RH and pH --------------------------------------------------
 
 arna_ground %>% 
+  filter(is.na(campaign) == F,
+         campaign != "February 2020") %>%
   rename(`f[Rowlinson]` = f_ratio_matt,
          `f[Andersen]` = f_ratio_simone) %>% 
   pivot_longer(c(`f[Andersen]`,`f[Rowlinson]`)) %>% 
-  ggplot(aes(pH,value,col = "darkorange")) +
+  ggplot(aes(rh,value,col = campaign)) +
   geom_point(size = 2.5) +
   theme_bw() +
   facet_wrap(~name,scales = "free",
              labeller = label_parsed) +
-  # scale_colour_manual(values = c("steelblue1","navy","darkolivegreen3","springgreen4","springgreen3","darkorange"),
-  #                     breaks = c("ARNA 2019","ARNA 2020","November 2015","August 2019","February 2020","February 2023")) +
-  labs(x = "pH",
+  scale_colour_manual(values = c("steelblue1","navy","darkolivegreen3","springgreen4","darkorange"),
+                      breaks = c("ARNA 2019","ARNA 2020","November 2015","August 2019","February 2023")) +
+  labs(x = "RH (%)",
        y = expression(f[obs]/f[para]),
        col = NULL) +
   geom_hline(yintercept = 1,linetype = "dashed") +
-  theme(legend.position = "None",
+  theme(legend.position = "top",
         text = element_text(size = 20)) +
   # scale_colour_viridis_d() +
   NULL
 
-ggsave('f_ratio_vs_ph.png',
-       path = "D:/Documents/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
+ggsave('f_ratio_vs_rh.png',
+       path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
        width = 29,
-       height = 14,
+       height = 10,
        units = 'cm')
 
 arna_feb23 %>% 
@@ -549,9 +644,18 @@ hourly_pss_ml = dat_ml %>%
          loss = (jhono + (kl*oh_molecules_cm3) + kdep) * ppt_to_molecules_cm3(hono_ppt),
          missing_production = (loss - production_without_nitrate), #molecule cm-3 s-1
          f_calc = missing_production/(jhno3 * nitrate_molecules_cm3),
-         f_para = 103706014.61/(1 + (83211.37 * nitrate_nmol_m3)), #matt's parameterisation
+         f_para_simone = (385.7)/(1 + (0.19 * nitrate_nmol_m3)),
+         f_para_matt = (5.02*10^8)/(1 + (7.19 * 10^5 * nitrate_nmol_m3)),
          f_calc_ml = missing_production/(jhno3 * nitrate_molecules_cm3_ml),
-         f_para_ml = 103706014.61/(1 + (83211.37 * nitrate_nmol_m3_ml)))
+         f_para_simone_ml = (385.7)/(1 + (0.19 * nitrate_nmol_m3_ml)),
+         f_para_matt_ml = (5.02*10^8)/(1 + (7.19 * 10^5 * nitrate_nmol_m3_ml)))
+
+#checking how different the ratios are if we're using ML or measured nitrate
+hourly_pss_ml %>% 
+  mutate(ratio_simone = f_calc/f_para_simone,
+         ratio_simone_ml = f_calc_ml/f_para_simone_ml) %>% 
+  ggplot(aes(ratio_simone,ratio_simone_ml)) +
+  geom_point()
 
 daily_fml = hourly_pss_ml %>% 
   timeAverage("1 day") %>% 

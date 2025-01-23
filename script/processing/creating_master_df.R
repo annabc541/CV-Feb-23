@@ -131,7 +131,7 @@ nox19 = read.csv("data/nox_data_thesis/nox19.csv") %>%
 nox20 = read.csv("data/nox_data_thesis/nox20.csv") %>% 
   mutate(date = ymd_hms(date))
 
-nox23 = read.csv("D:/Documents/Cape Verde/nox/processing/ozone_correction/processed_data/nox2023.csv") %>% 
+nox23 = read.csv("~/Cape Verde/nox/processing/ozone_correction/processed_data/nox2023.csv") %>% 
   mutate(date = ymd_hms(date))
 
 nox = bind_rows(no15,nox19,nox20,nox23) %>% 
@@ -180,6 +180,7 @@ dat = df_list %>% reduce(full_join,by = "date") %>%
   timeAverage("1 hour") %>% #for some reason 2019 and 2020 data is duplicated, averaging to fix that
   mutate(year = year(date),
          month = month(date),
+         date = format(date, "%Y-%m-%d %H:%M:%S"),
          keep_data = case_when(year == 2015 & month >= 11 ~ 1,
                                year == 2019 & month == 8 ~ 1,
                                year == 2020 & month == 2 ~ 1,
