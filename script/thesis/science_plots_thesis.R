@@ -11,15 +11,25 @@ Sys.setenv(TZ = 'UTC')
 
 #read in full data (data joined in creating_master_df)
 
-dat_full = read.csv("output/data/all_data_utc_updated_nox_hono.csv") %>% 
+dat_sep24 = read.csv("~/Cape Verde/cvao_hono_sep24/output/processed_data/sept24_all_dat.csv") %>% 
+  select(date,no_ppt,no_u_ppt,no2_ppt,no2_u_ppt,hono,hono_err)
+
+
+dat_full = read.csv("output/data/all_data_utc_updated_nox_hono.csv") %>%
+  bind_rows(dat_sep24) %>% 
   mutate(date = ymd_hms(date),
          campaign = case_when(date > "2015-11-24" & date < "2015-12-04" ~ "November 2015",
                               date > "2019-08-15" & date < "2019-08-29" ~ "August 2019",
                               date > "2020-02-14" & date < "2020-02-27" ~ "February 2020",
-                              date > "2023-02-07" & date < "2023-02-27" ~ "February 2023"),
+                              date > "2023-02-07" & date < "2023-02-27" ~ "February 2023",
+                              date > "2024-09-08" & date < "2024-09-19" ~ "September 2024"),
          hono_err = case_when(campaign == "November 2015" ~ hono * 0.1 + 0.2,
                               campaign == "February 2020" ~ hono * 0.1 + 0.2,
-                              TRUE ~ hono_err))
+                              TRUE ~ hono_err),
+         pollution_flag = case_when(ws <= 2 | wd >= 100 & wd <= 340 ~ "Local pollution (met)",
+                                    date > "2024-09-11 03:00" & date < "2024-09-12 14:00" ~ "Local pollution",
+                                    TRUE ~ "Baseline"))
+
 
 # write.csv(dat_full,"~/Cape Verde/peroxy_campaign/output/data/all_data_utc_updated_nox.csv",row.names = F)
 
@@ -28,7 +38,7 @@ dat_full = read.csv("output/data/all_data_utc_updated_nox_hono.csv") %>%
 #timeseries 2023 with shading for errors/uncertainty
 
 test = dat_full%>% 
-  select(date,hono,hono_err,no_ppt,no_u_ppt,no2_ppt,no2_u_ppt,campaign) %>% 
+  select(date,hono,hono_err,no_ppt,no_u_ppt,no2_ppt,no2_u_ppt,campaign,pollution_flag) %>% 
   mutate(hono_err_plot_max = hono + 2 * hono_err,
          hono_err_plot_min = hono - 2 * hono_err,
          no_err_plot_max = no_ppt + no_u_ppt,
@@ -221,7 +231,11 @@ test %>%
          campaign != "February 2020") %>% 
   mutate(campaign2 = case_when(campaign == "November 2015" ~"November~2015",
                                campaign == "August 2019" ~"August~2019",
-                               campaign == "February 2023" ~"February~2023")) %>%
+                               campaign == "February 2023" ~"February~2023",
+                               campaign == "September 2024" ~"September~2024"),
+         value = ifelse(pollution_flag == "Baseline",value,NA_real_),
+         max_err_v = ifelse(pollution_flag == "Baseline",max_err_v,NA_real_),
+         min_err_v = ifelse(pollution_flag == "Baseline",min_err_v,NA_real_)) %>%
   ggplot() +
   theme_bw() +
   geom_path(aes(date,value,col = name),size = 0.75,group = 1) +
@@ -231,7 +245,7 @@ test %>%
        col = NULL) +
   scale_colour_manual(values = c("darkorange","steelblue1","navy")) +
   scale_fill_manual(values = c("darkorange","steelblue1","navy")) +
-  facet_grid(cols = vars(factor(campaign2,levels = c("November~2015","August~2019","February~2023"))),
+  facet_grid(cols = vars(factor(campaign2,levels = c("November~2015","August~2019","February~2023","September~2024"))),
              scales = "free",rows = vars(name),labeller = label_parsed) +
   # theme(legend.position = "top") +
   scale_x_datetime(date_breaks = "4 day",date_labels = "%d/%m") +
@@ -241,7 +255,7 @@ test %>%
 
 ggsave('hono_nox_timeseries_not_feb20.png',
        path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
-       width = 32,
+       width = 35,
        height = 12,
        units = 'cm')
 
@@ -250,7 +264,8 @@ ggsave('hono_nox_timeseries_not_feb20.png',
 diurnal = dat_full %>%
   filter(is.na(hono) == FALSE,
          campaign != "no campaign",
-         campaign != "February 2020") %>%
+         campaign != "February 2020",
+         pollution_flag == "Baseline") %>%
   mutate(hour = hour(date)) %>% 
   group_by(campaign,hour) %>%
   select(hono,no = no_ppt,no2 = no2_ppt) %>% 
@@ -285,11 +300,11 @@ diurnal %>%
   theme_bw() +
   geom_path(aes(hour,value,col = campaign),size = 0.75) +
   geom_ribbon(aes(hour,ymin = min_err_v,ymax = max_err_v,fill = campaign),alpha = 0.25) +
-  facet_grid(cols = vars(name),scales = "free",labeller = label_parsed) +
-  scale_colour_manual(values = c("darkolivegreen3","springgreen4","darkorange"),
-                      breaks = c("November 2015","August 2019","February 2023")) +
-  scale_fill_manual(values = c("darkolivegreen3","springgreen4","darkorange"),
-                    breaks = c("November 2015","August 2019","February 2023")) +
+  facet_wrap(~name,scales = "free_y",labeller = label_parsed) +
+  scale_colour_manual(values = c("darkolivegreen3","springgreen4","darkorange","goldenrod1"),
+                      breaks = c("November 2015","August 2019","February 2023","September 2024")) +
+  scale_fill_manual(values = c("darkolivegreen3","springgreen4","darkorange","goldenrod1"),
+                    breaks = c("November 2015","August 2019","February 2023","September 2024")) +
   # scale_x_datetime(date_breaks = "2 days",date_labels = "%d %b") +
   theme(legend.position = "top",
         text = element_text(size =  20)) +
@@ -317,7 +332,7 @@ rects = data.frame(xstart = c(0),
                    cols = c("MBL"))
 
 ground_dat = dat_full %>% 
-  # filter(campaign == "February 2023") %>% 
+  filter(pollution_flag == "Baseline") %>%
   select(date,hono,hono_err,no_ppt,no_u_ppt,no2_ppt,no2_u_ppt,campaign) %>% 
   mutate(hono_max_err = hono + 2 * hono_err,
          hono_min_err = hono - 2 * hono_err,
@@ -335,7 +350,8 @@ ground_dat = dat_full %>%
   mutate(campaign = case_when(date > "2015-11-24" & date < "2015-12-04" ~ "November 2015",
                               date > "2019-08-15" & date < "2019-08-29" ~ "August 2019",
                               date > "2020-02-14" & date < "2020-02-27" ~ "February 2020",
-                              date > "2023-02-07" & date < "2023-02-27" ~ "February 2023")) %>%
+                              date > "2023-02-07" & date < "2023-02-27" ~ "February 2023",
+                              date > "2024-09-08" & date < "2024-09-19" ~ "September 2024")) %>%
   select(date,HONO,NO,`NO[2]`,hono_max_err:no2_min_err,altitude_m,campaign)
 
 arna_plot_mean = arna_dat %>% 
@@ -358,6 +374,8 @@ arna_plot_mean = arna_dat %>%
   group_by(categories) %>% 
   select(HONO,NO,`NO[2]`) %>% 
   summarise(across(where(is.numeric),list(mean = ~mean(.,na.rm = T),sd = ~sd(.,na.rm = T))))
+
+mean = mean(arna_plot_mean$HONO,na.rm = T)
 
 arna_plot = arna_dat %>% 
   mutate(campaign = ifelse(start_time < "2020-01-01","ARNA 2019","ARNA 2020"),
@@ -396,7 +414,8 @@ arna_plot %>%
   scale_colour_manual(values = c("ARNA 2020" = "navy",
                                  "ARNA 2019" = "steelblue1",
                                  # "February 2020" = "springgreen3",
-                                 "February 2023" = "darkorange"
+                                 "February 2023" = "darkorange",
+                                 "September 2024" = "goldenrod1"
                                  # "August 2019" = "springgreen4",
                                  # "November 2015" = "darkolivegreen3"
                                  )) +
@@ -409,8 +428,8 @@ arna_plot %>%
   theme(legend.position = "top",
         text = element_text(size =  20))
 
-ggsave('hono_nox_arna_feb23.png',
-       path = "D:/Documents/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
+ggsave('hono_nox_arna_feb23_sep24.png',
+       path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
        width = 29,
        height = 15,
        units = 'cm')
