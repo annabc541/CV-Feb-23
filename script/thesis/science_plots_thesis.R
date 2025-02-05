@@ -74,11 +74,11 @@ test %>%
   labs(x = NULL,
        y = "Mixing ratio (ppt)")
 
-ggsave('hono_nox_timeseries23.png',
-       path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
-       width = 29,
-       height = 12,
-       units = 'cm')
+# ggsave('hono_nox_timeseries23.png',
+#        path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
+#        width = 29,
+#        height = 12,
+#        units = 'cm')
 
 # Air masses for feb 2023 -------------------------------------------------
 
@@ -141,20 +141,22 @@ dat_boxplot = dat_full %>%
          daytime_no2 = ifelse(hour >= 11 & hour <= 15,no2_ppt,NA_real_),
          daytime_hono = ifelse(hour >= 11 & hour <= 15,hono,NA_real_)) %>% 
   timeAverage("1 day") %>%
-  mutate(sahara_categories = case_when(sahara < 1 ~ "0%",
-                                       sahara > 1 & sahara < 20 ~ "< 20%",
-                                       sahara > 20 ~ "> 20%"))
+  select(date,daytime_hono,daytime_no,daytime_no2,upwelling:south_atlantic) %>% 
+  filter(is.na(daytime_hono) == F) %>% 
+  mutate(sahara_categories = case_when(sahara == 0 ~ "0%",
+                                       sahara > 0 & sahara < 10 ~ "< 10%",
+                                       sahara > 10 ~ "> 10%"))
 
 dat_boxplot %>% 
   rename(NO = daytime_no,
          HONO = daytime_hono,
          `NO[2]` = daytime_no2) %>% 
   pivot_longer(c(HONO,NO,`NO[2]`)) %>%
-  ggplot(aes(factor(sahara_categories,levels = c("0%","< 20%","> 20%")),value,fill = sahara_categories)) +
+  ggplot(aes(factor(sahara_categories,levels = c("0%","< 10%","> 10%")),value,fill = sahara_categories)) +
   theme_bw() +
   geom_boxplot() +
   facet_wrap(vars(name),labeller = label_parsed,scales = "free") +
-  scale_fill_manual(values = c("darkorange","steelblue1","navy")) +
+  scale_fill_manual(values = c("steelblue1","darkorange","navy")) +
   labs(x = "Saharan air mass",
        y = "Mixing ratio (ppt)",
        fill = NULL) +
@@ -162,7 +164,7 @@ dat_boxplot %>%
         text = element_text(size =  20))
 
 ggsave('hono_nox_sahara_boxplot.png',
-       path = "D:/Documents/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
+       path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
        width = 29,
        height = 12,
        units = 'cm')

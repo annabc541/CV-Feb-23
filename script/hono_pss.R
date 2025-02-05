@@ -3,6 +3,8 @@ library(lubridate)
 library(janitor)
 library(zoo)
 library(openair)
+library(ggh4x)
+library(ggpubr)
 
 Sys.setenv(TZ = 'UTC')
 # conflict_prefer("select",winner = "dplyr")
@@ -381,20 +383,30 @@ arna_data = read.csv("data/hono/arna_hono/Renoxification_data_for_Anna_v2.csv") 
          no = NO_pptV,
          jhno3 = J_HNO3,
          jhono = J_HONO,
-         altitude = Altitude_m)
+         altitude = Altitude_m,
+         temp_k = Temp_K) %>% 
+  mutate(temp = temp_k - 273.15)
 
 arna_aerosol = read.csv("data/aerosol_data/arna_aerosols.csv") %>% 
   clean_names() %>% 
-  mutate(date = mdy_hm(start_time)) %>%  
-  mutate(nitrate_ug_m3 = ppt_to_ug_m3(no3_ppt,molar_mass$no3),
-         sulfate_ug_m3 = ppt_to_ug_m3(so4_ppt,molar_mass$so4),
-         chloride_ug_m3 = ppt_to_ug_m3(cl_ppt,molar_mass$cl),
-         sodium_ug_m3 = ppt_to_ug_m3(na_ppt,molar_mass$na),
-         ammonium_ug_m3 = ppt_to_ug_m3(nh4_ppt,molar_mass$nh4),
-         magnesium_ug_m3 = ppt_to_ug_m3(mg_ppt,molar_mass$mg),
-         calcium_ug_m3 = ppt_to_ug_m3(ca_ppt,molar_mass$ca),
-         potassium_ug_m3 = ppt_to_ug_m3(k_ppt,molar_mass$k)) %>% 
-  select(date:potassium_ug_m3)
+  mutate(date = mdy_hm(start_time)) %>% 
+  # mutate(nitrate_ug_m3 = ppt_to_ug_m3(no3_ppt,molar_mass$no3),
+  #        nitrate_err = ppt_to_ug_m3(total_no3_uncertainty,molar_mass$no3),
+  #        sulfate_ug_m3 = ppt_to_ug_m3(so4_ppt,molar_mass$so4),
+  #        sulfate_err = ppt_to_ug_m3(total_so4_uncertainty,molar_mass$so4),
+  #        chloride_ug_m3 = ppt_to_ug_m3(cl_ppt,molar_mass$cl),
+  #        chloride_err = ppt_to_ug_m3(total_cl_uncertainty,molar_mass$cl),
+  #        sodium_ug_m3 = ppt_to_ug_m3(na_ppt,molar_mass$na),
+  #        sodium_err = ppt_to_ug_m3(total_na_uncertainty,molar_mass$na),
+  #        ammonium_ug_m3 = ppt_to_ug_m3(nh4_ppt,molar_mass$nh4),
+  #        ammonium_err = ppt_to_ug_m3(total_nh4_uncertainty,molar_mass$nh4),
+  #        magnesium_ug_m3 = ppt_to_ug_m3(mg_ppt,molar_mass$mg),
+  #        magnesium_err = ppt_to_ug_m3(total_mg_uncertainty,molar_mass$mg),
+  #        calcium_ug_m3 = ppt_to_ug_m3(ca_ppt,molar_mass$ca),
+  #        calcium_err = ppt_to_ug_m3(total_ca_uncertainty,molar_mass$ca),
+  #        potassium_ug_m3 = ppt_to_ug_m3(k_ppt,molar_mass$k),
+  #        potassium_err = ppt_to_ug_m3(total_k_uncertainty,molar_mass$k)) %>% 
+  select(date,no3_ppt:total_k_uncertainty)
 
 arna = arna_data %>% left_join(arna_aerosol)
 
@@ -406,6 +418,7 @@ arna_pss = arna %>%
          h = lifetime * dv,
          year = year(date),
          kdep = 0.01/h,
+         nitrate_ug_m3 = ppt_to_ug_m3(no3_ppt,molar_mass$no3),
          nitrate_molecules_cm3 = (nitrate_ug_m3 * 10^-12 *6.022 * 10^23)/62.004,
          nitrate_nmol_m3 = (nitrate_molecules_cm3 * 10^15)/(6.022*10^23),
          production_without_nitrate = kp* oh_molecules_cm3 * ppt_to_molecules_cm3(no_ppt),
@@ -454,42 +467,102 @@ arna_ground = daily_pss %>%
                               year == 2020 ~ "February 2020",
                               year == 2023 ~ "February 2023",
                               year == 2024 ~ "September 2024")) %>% 
+  rename_with(~str_remove(.,"_ug_m3")) %>%
   # select(date,year,hono_ppt,nitrate_nmol_m3,nitrate_molecules_cm3,jhno3,missing_production,f_calc,f_para,campaign,rh) %>% 
   bind_rows(arna_pss) %>% 
-  mutate(nitrate_ppt = molecules_cm3_to_ppt(nitrate_molecules_cm3),
-         f_ratio_matt = f_calc/f_para_matt,
+  mutate(f_ratio_matt = f_calc/f_para_matt,
          f_ratio_simone = f_calc/f_para_simone) %>% 
-  arrange(date)
+  arrange(date) %>% 
+  filter(is.na(campaign) == F,
+         campaign == "February 2023" | campaign == "ARNA 2019" | campaign == "ARNA 2020",
+         altitude < 500 | is.na(altitude) == T)
   
 # arna_ground %>% 
 #   select(chloride_ug_m3:sulfate_ug_m3,sodium_ug_m3:calcium_ug_m3,rh,f_obs = f_calc,f_para_matt,f_para_simone,f_ratio_matt,f_ratio_simone) %>% 
 #   corPlot()
 
+breaks_fun <- function(x) {
+  if(max(x) > 10) {
+    seq(0,12,3)
+  } else if(max(x) < 0.5) {
+    seq(0,0.15,0.05)
+  }
+  else {pretty(x)}
+}
+
 arna_ground %>% 
+  select(-c(fluoride_ug_m3,msa_ug_m3)) %>% 
+  rename_with(~str_remove(.,"_ug_m3")) %>%
+  mutate(hono_err_percent = hono_err/hono_ppt,
+         f_ratio_err_matt = f_ratio_matt * hono_err_percent,
+         f_rem_max = f_ratio_matt + f_ratio_err_matt,
+         f_rem_min = f_ratio_matt - f_ratio_err_matt,
+         f_ratio_err_simone = f_ratio_simone * hono_err_percent,
+         f_res_max = f_ratio_simone + f_ratio_err_simone,
+         f_res_min = f_ratio_simone - f_ratio_err_simone,
+         across(c(nitrate_err:magnesium_err,potassium_err),~ifelse(is.na(.),0.002,.)),
+         calcium_err = ifelse(is.na(calcium_err),0.02,calcium_err),
+         oxalate_err = 0.002,
+         across(.cols = c(chloride:calcium),
+                .fns = ~ . + get(paste0(cur_column(),"_err")),
+                .names = "{col}_max_err"),
+         across(.cols = c(chloride:calcium),
+                .fns = ~ . - get(paste0(cur_column(),"_err")),
+                .names = "{col}_min_err")) %>%
   filter(is.na(campaign) == F,
          campaign == "February 2023" | campaign == "ARNA 2019" | campaign == "ARNA 2020",
          altitude < 500 | is.na(altitude) == T) %>%
-  # select(-c(oxalate_ug_m3:msa_ug_m3)) %>%
-  rename_with(~str_remove(.,"_ug_m3")) %>% 
-  rename_with(~str_to_title(.),.cols = c("mass":"calcium","bromide")) %>% 
-  rename(OC = oc, EC = ec,f_obs = f_calc,RH =rh) %>%
-  # pivot_longer(cols = c(f_ratio_matt,f_ratio_simone),names_to = "f_name",values_to = "f_value") %>% 
-  pivot_longer(c(Ammonium,Calcium,Chloride,Magnesium,Nitrate,Oxalate,Potassium,Sodium,Sulfate)) %>%
-  # pivot_longer(c(f_ratio_simone,f_ratio_matt),names_to = "f",values_to = "f_values") %>%
-  ggplot(aes(value,f_ratio_matt,col = campaign)) +
-  geom_point(size = 2.5) +
-  # facet_grid(rows = vars(name),cols = vars(f),scales = "free") +
-  facet_wrap(~name,scales = "free_x") +
+  rename(`f[Andersen]` = f_ratio_simone,
+         `f[Rowlinson]` = f_ratio_matt) %>% 
+  pivot_longer(c(`f[Andersen]`,`f[Rowlinson]`),
+               values_to = "f_v",names_to = "f_n") %>% 
+  pivot_longer(cols = c(f_rem_max,f_res_max),
+               values_to = "f_max_err_v",names_to = "f_max_err_n") %>%
+  pivot_longer(cols = c(f_rem_min,f_res_min),
+               values_to = "f_min_err_v",names_to = "f_min_err_n") %>%
+  mutate(f_flag = case_when(f_n == "f[Andersen]" & f_min_err_n == "f_res_min" & f_max_err_n == "f_res_max" ~ "s",
+                          f_n == "f[Rowlinson]" & f_min_err_n == "f_rem_min" & f_max_err_n == "f_rem_max" ~ "m")) %>%
+  filter(is.na(f_flag) == F) %>%
+  rename_with(~str_to_title(.),.cols = c("chloride":"calcium")) %>% 
+  pivot_longer(c(Ammonium,Calcium,Chloride,Magnesium,Nitrate,Oxalate,Potassium,Sodium,Sulfate),
+               values_to = "aerosol_v") %>%
+  pivot_longer(cols = c(chloride_max_err:calcium_max_err),
+               values_to = "max_err_v",names_to = "max_err_n") %>%
+  pivot_longer(cols = c(chloride_min_err:calcium_min_err),
+               values_to = "min_err_v",names_to = "min_err_n") %>%
+  mutate(flag = case_when(name == "Ammonium" & min_err_n == "ammonium_min_err" & max_err_n == "ammonium_max_err" ~ "a",
+                          name == "Calcium" & min_err_n == "calcium_min_err" & max_err_n == "calcium_max_err" ~ "ca",
+                          name == "Chloride" & min_err_n == "chloride_min_err" & max_err_n == "chloride_max_err" ~ "ch",
+                          name == "Magnesium" & min_err_n == "magnesium_min_err" & max_err_n == "magnesium_max_err" ~ "mg",
+                          name == "Nitrate" & min_err_n == "nitrate_min_err" & max_err_n == "nitrate_max_err" ~ "ni",
+                          name == "Oxalate" & min_err_n == "oxalate_min_err" & max_err_n == "oxalate_max_err" ~ "ox",
+                          name == "Potassium" & min_err_n == "potassium_min_err" & max_err_n == "potassium_max_err" ~ "k",
+                          name == "Sodium" & min_err_n == "sodium_min_err" & max_err_n == "sodium_max_err" ~ "na",
+                          name == "Sulfate" & min_err_n == "sulfate_min_err" & max_err_n == "sulfate_max_err" ~ "s")) %>%
+  filter(is.na(flag) == F) %>%
+  ggplot() +
+  geom_point(aes(aerosol_v,f_v,col = campaign),size = 2.5) +
+  geom_errorbar(aes(x = aerosol_v,ymin = f_min_err_v,ymax = f_max_err_v,col = campaign)) +
+  geom_errorbar(aes(y = f_v,xmin = min_err_v,xmax = max_err_v,col = campaign)) +
+  facet_nested_wrap(vars(name,f_n),
+                    scales = "free_x",
+                    labeller = label_parsed,
+                    ncol = 6,
+                    axes = "margins") +
+  # facet_wrap(~name,scales = "free_x") +
   theme_bw() +
   scale_colour_manual(values = c("steelblue1","navy","darkorange"),
                       breaks = c("ARNA 2019","ARNA 2020","February 2023")) +
+  scale_x_continuous(breaks = breaks_fun) +
   labs(x = expression(Aerosol~(ug/m^3)),
-       y = expression(f[obs]/f[Rowlinson]),
+       y = expression(f[obs]/f[parametrised]),
        col = NULL) +
+  stat_cor(aes(aerosol_v,f_v,label = after_stat(rr.label))) +
   theme(legend.position = "top",
         text = element_text(size = 20),
         panel.spacing = unit(1,"lines")) +
   geom_hline(yintercept = 1,linetype = "dashed") +
+  # xlim(1,1.1)
   # scale_colour_viridis_d() +
   NULL
 
@@ -498,16 +571,14 @@ dat_for_r_squared = arna_ground %>%
          campaign == "February 2023" | campaign == "ARNA 2019" | campaign == "ARNA 2020",
          altitude < 500 | is.na(altitude) == T,)
 
-model <- lm(f_ratio_simone ~ sodium_ug_m3, data = dat_for_r_squared)
+model <- lm(f_ratio_matt ~ sodium_ug_m3, data = dat_for_r_squared)
 r_squared <- summary(model)$r.squared
 
-ggsave('f_ratio_matt_vs_aerosols.png',
-       path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images/cheating",
+ggsave('f_ratio_vs_aerosols.png',
+       path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
        width = 40,
-       height = 20,
+       height = 30,
        units = 'cm')
-
-
 
 # With 2024 data ----------------------------------------------------------
 
@@ -546,18 +617,22 @@ arna_ground24 %>%
         text = element_text(size = 20)) +
   NULL
 
-ggsave('f_ratio_vs_rh_all_campaigns_york_mbl_za.png',
-       path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images/sep24",
-       width = 30,
-       height = 12,
-       units = 'cm')
+# ggsave('f_ratio_vs_rh_all_campaigns_york_mbl_za.png',
+#        path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images/sep24",
+#        width = 30,
+#        height = 12,
+#        units = 'cm')
+
 # f ratio with RH and pH --------------------------------------------------
 
 arna_ground %>% 
   mutate(altitude = ifelse(campaign != "ARNA 2019" & campaign != "ARNA 2020",3,altitude),
-         rh_error = rh * 0.02,
-         rh_e_max = rh + rh_error,
-         rh_e_min = rh - rh_error,
+         temp_k = temp + 273.15,
+         e_s = 611.21 * exp((17.52 * temp) / (temp + 240.97)),
+         absolute_humidity = 1000 * ((rh * e_s) / (461.5 * temp_k * 100)),
+         humidity_error = rh * 0.02,
+         h_e_max = rh + humidity_error,
+         h_e_min = rh - humidity_error,
          hono_err_percent = hono_err/hono_ppt,
          f_ratio_err_matt = f_ratio_matt * hono_err_percent,
          f_rem_max = f_ratio_matt + f_ratio_err_matt,
@@ -580,15 +655,16 @@ arna_ground %>%
   filter(is.na(flag) == F) %>%
   ggplot() +
   geom_errorbar(aes(rh,ymin = min_err_v,ymax = max_err_v,fill = name,col = campaign)) +
-  geom_errorbarh(aes(y = value,xmax = rh_e_max,xmin = rh_e_min,col = campaign)) +
+  geom_errorbarh(aes(y = value,xmax = h_e_max,xmin = h_e_min,col = campaign)) +
   geom_point(aes(rh,value,col = campaign),size = 2.5) +
   theme_bw() +
   facet_wrap(~name,scales = "free",
              labeller = label_parsed) +
   scale_colour_manual(values = c("steelblue1","navy","darkorange","goldenrod1"),
                       breaks = c("ARNA 2019","ARNA 2020","February 2023","September 2024")) +
-  labs(x = "RH (%)",
-       y = expression(f[obs]/f[para]),
+  labs(y = expression(f[obs]/f[para]),
+       x = "RH (%)",
+       # x = expression(Absolute~humidity~(g~m^{-3})),
        col = NULL) +
   geom_hline(yintercept = 1,linetype = "dashed") +
   theme(legend.position = "top",
@@ -596,11 +672,11 @@ arna_ground %>%
   # scale_colour_viridis_d() +
   NULL
 
-ggsave('f_ratio_vs_rh.png',
-       path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
-       width = 29,
-       height = 15,
-       units = 'cm')
+# ggsave('f_ratio_vs_absolute_humidity_all.png',
+#        path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
+#        width = 29,
+#        height = 15,
+#        units = 'cm')
 
 arna_feb23 %>% 
   mutate(f_calc_err = f_calc * 0.1) %>% 
