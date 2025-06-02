@@ -4,7 +4,7 @@ library(janitor)
 library(zoo)
 
 Sys.setenv(TZ = 'UTC')
-
+setwd("~/Cape Verde/peroxy_campaign")
 #plots for thesis
 
 # Reading in data ---------------------------------------------------------
@@ -16,7 +16,7 @@ dat_sep24 = read.csv("~/Cape Verde/cvao_hono_sep24/output/processed_data/sept24_
 
 
 dat_full = read.csv("output/data/all_data_utc_updated_nox_hono.csv") %>%
-  bind_rows(dat_sep24) %>% 
+  bind_rows(dat_sep24) %>%
   mutate(date = ymd_hms(date),
          campaign = case_when(date > "2015-11-24" & date < "2015-12-04" ~ "November 2015",
                               date > "2019-08-15" & date < "2019-08-29" ~ "August 2019",
@@ -83,7 +83,7 @@ test %>%
 # Air masses for feb 2023 -------------------------------------------------
 
 #reading in air mass data
-air_masses = read.csv("D:/Documents/Cape Verde/new_CVAO_sector_%_boxes_1.csv") %>% 
+air_masses = read.csv("~/Cape Verde/new_CVAO_sector_%_boxes_1.csv") %>% 
   rename(date = X) %>% 
   mutate(date = ymd_hms(date)) %>% 
   rename_with(~ gsub("\\.", " ", .))
@@ -145,19 +145,31 @@ dat_boxplot = dat_full %>%
   filter(is.na(daytime_hono) == F) %>% 
   mutate(sahara_categories = case_when(sahara == 0 ~ "0%",
                                        sahara > 0 & sahara < 10 ~ "< 10%",
-                                       sahara > 10 ~ "> 10%"))
+                                       sahara > 10 ~ "> 10%"),
+         europe_categories = case_when(europe <= 5 ~ "<5%",
+                                       between(europe,5,10) ~ "5-10%",
+                                       europe > 10 ~ ">10%"),
+         ocean = upwelling + north_atlantic + south_atlantic,
+         african = central_africa + sahel + west_africa + sahara,
+         polluted = african + north_america + europe,
+         air_masses = case_when(ocean >= 98 & south_atlantic <= 1 ~ "North Atlantic",
+                                south_atlantic > 1 & south_atlantic + south_america > polluted ~ "Southern Hemisphere",
+                                african > polluted/2 & african > 1 ~ "African",
+                                europe > polluted/2 & europe > 1 ~ "European/North Atlantic",
+                                north_america > polluted/2 & north_america > 1 ~ "North American/Atlantic"))
 
 dat_boxplot %>% 
   rename(NO = daytime_no,
          HONO = daytime_hono,
          `NO[2]` = daytime_no2) %>% 
   pivot_longer(c(HONO,NO,`NO[2]`)) %>%
-  ggplot(aes(factor(sahara_categories,levels = c("0%","< 10%","> 10%")),value,fill = sahara_categories)) +
+  # ggplot(aes(factor(sahara_categories,levels = c("0%","< 10%","> 10%")),value,fill = sahara_categories)) +
+  ggplot(aes(factor(europe_categories,levels = c("<5%","5-10%",">10%")),value,fill = europe_categories)) +
   theme_bw() +
   geom_boxplot() +
   facet_wrap(vars(name),labeller = label_parsed,scales = "free") +
   scale_fill_manual(values = c("steelblue1","darkorange","navy")) +
-  labs(x = "Saharan air mass",
+  labs(x = "European air mass",
        y = "Mixing ratio (ppt)",
        fill = NULL) +
   theme(legend.position = "None",
@@ -231,13 +243,16 @@ ggsave('hono_nox_diurnal23.png',
 test %>% 
   filter(campaign != "no campaign",
          campaign != "February 2020") %>% 
-  mutate(campaign2 = case_when(campaign == "November 2015" ~"November~2015",
+  mutate(campaign2 = case_when(
+    campaign == "November 2015" ~"November~2015",
                                campaign == "August 2019" ~"August~2019",
                                campaign == "February 2023" ~"February~2023",
                                campaign == "September 2024" ~"September~2024"),
-         value = ifelse(pollution_flag == "Baseline",value,NA_real_),
-         max_err_v = ifelse(pollution_flag == "Baseline",max_err_v,NA_real_),
-         min_err_v = ifelse(pollution_flag == "Baseline",min_err_v,NA_real_)) %>%
+         # value = ifelse(pollution_flag == "Baseline",value,NA_real_),
+         # max_err_v = ifelse(pollution_flag == "Baseline",max_err_v,NA_real_),
+         # min_err_v = ifelse(pollution_flag == "Baseline",min_err_v,NA_real_)
+    ) %>%
+  filter(is.na(campaign2) == F) %>% 
   ggplot() +
   theme_bw() +
   geom_path(aes(date,value,col = name),size = 0.75,group = 1) +
@@ -255,11 +270,11 @@ test %>%
         text = element_text(size =  20)) +
   NULL
 
-ggsave('hono_nox_timeseries_not_feb20.png',
-       path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
-       width = 35,
-       height = 12,
-       units = 'cm')
+# ggsave('hono_nox_timeseries_feb23_sep24.png',
+#        path = "~/Presentations/Presentations for external meetings/leeds_meeting_may25/plots",
+#        width = 32,
+#        height = 11,
+#        units = 'cm')
 
 # HONO and NO diurnals from all campaigns ----------------------------------------
 
@@ -267,6 +282,8 @@ diurnal = dat_full %>%
   filter(is.na(hono) == FALSE,
          campaign != "no campaign",
          campaign != "February 2020",
+         campaign != "August 2019",
+         campaign != "November 2015",
          pollution_flag == "Baseline") %>%
   mutate(hour = hour(date)) %>% 
   group_by(campaign,hour) %>%

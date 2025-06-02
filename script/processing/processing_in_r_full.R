@@ -3,6 +3,7 @@ library(lubridate)
 library(zoo)
 library(oce)
 library(openair)
+library(plotly)
 
 Sys.setenv(TZ = "UTC")
 
@@ -414,7 +415,9 @@ nights = rle(night_zeroing$night_flag) %>%
 night_flagged = night_zeroing %>% 
   mutate(idx = 1:nrow(.)) %>% 
   left_join(nights, "idx") %>% #joins two dfs by their row number
-  mutate(id = ifelse(is.na(id), 0, id)) #makes id (group) = 0 during the day
+  mutate(id = ifelse(is.na(id), 0, id), #makes id (group) = 0 during the day
+         ch1_sd = ifelse(time == 22,ch1,NA_real_),
+         ch2_sd = ifelse(time == 22,ch2,NA_real_)) #for calculating the sd by looking at the variation over an hour at night (which is the same length as the averaging time)
 
 night_avg = night_flagged %>% 
   filter(flag == 0, #don't want any flagged moments included in nighttime average
@@ -422,8 +425,8 @@ night_avg = night_flagged %>%
   group_by(id) %>% 
   summarise(ch1_night = median(ch1),
             ch2_night = median(ch2),
-            ch1_zero_sd = 2 * sd(ch1),
-            ch2_zero_sd = 2 * sd(ch2),
+            ch1_zero_sd = 2 * sd(ch1_sd,na.rm = T),
+            ch2_zero_sd = 2 * sd(ch2_sd,na.rm = T),
             idx = mean(idx)) %>% 
   ungroup() %>% 
   mutate(idx = round(idx),
@@ -737,12 +740,11 @@ final_dat = bind_rows(processed_dat3,processed_dat1,processed_dat2) %>%
   mutate(hono = ifelse(flag == 0,hono,NA_real_),
          hono_err = ifelse(flag == 0,hono_err,NA_real_),
          hono_lod = ifelse(flag == 0,hono_lod,NA_real_))
-  filter(measuring_conditions != "Reagents 2, nighttime zeroes")
 
-hono_lod_r1 = mean(final_dat$hono_lod,na.rm = T)
-hono_lod_sd_r1 = 2 * sd(final_dat$hono_lod,na.rm = T)
-hono_err_r1 = mean(final_dat$hono_err,na.rm = T)
-hono_err_sd_r1 = 2 * sd(final_dat$hono_err,na.rm = T)
+hono_lod = mean(final_dat$hono_lod,na.rm = T)
+hono_lod_sd = 2 * sd(final_dat$hono_lod,na.rm = T)
+hono_err = mean(final_dat$hono_err,na.rm = T)
+hono_err_sd = 2 * sd(final_dat$hono_err,na.rm = T)
 
 hourly_dat = final_dat %>% 
   select(-flag) %>% 
@@ -767,7 +769,7 @@ hono23 %>%
        y = "HONO (ppt)",
        col = NULL)
 
-write.csv(hourly_dat,"output/data/hono23_hourly_utc.csv",row.names = FALSE)
+#write.csv(hourly_dat,"output/data/hono23_hourly_utc.csv",row.names = FALSE)
 
 # Data to send to us epa --------------------------------------------------
 # 
