@@ -53,8 +53,8 @@ ppt_to_ug_m3 <- function(x,molar_mass){
   z = (y * molar_mass * 10^12) / (6.022 * 10^23)
   z
   }
-# ss_aerosol <- function(na,x){y = na * (x/468)}
-# nss_aerosol <- function(ss,x){y = x - ss}
+ ss_aerosol <- function(na,x){y = na * (x/468)}
+ nss_aerosol <- function(ss,x){y = x - ss}
 
 NormalisedMeanBias <- function(modelled, observations, na.rm){
   mod <- modelled
@@ -69,7 +69,6 @@ NormalisedMeanBias <- function(modelled, observations, na.rm){
 #can choose whether to filter by year or to calculate for whole available dataset
 
 dat_sep24 = read.csv("~/Cape Verde/cvao_hono_sep24/output/processed_data/sept24_all_dat.csv") %>% 
-  filter(date > "2024-09-08" & date < "2024-09-19") %>% 
   mutate(date = ymd_hms(date),
          year = year(date),
          pollution_flag = case_when(ws <= 2 | wd >= 100 & wd <= 340 ~ "Local pollution (met)",
@@ -78,14 +77,15 @@ dat_sep24 = read.csv("~/Cape Verde/cvao_hono_sep24/output/processed_data/sept24_
          hono = ifelse(pollution_flag == "Baseline",hono,NA_real_),
          hono_err = ifelse(pollution_flag == "Baseline",hono_err,NA_real_)) %>% 
   clean_names() %>% 
-  rename(nitrate_ug_m3 = nitrate) %>% 
-  select(-c(pollution_flag,no_lod_ppt,no2_lod_ppt,no_flag,no2_flag,oh_molecules_cm3,hono_err_percent))
+  filter(date > "2024-09-08" & date < "2024-09-19") %>% 
+  select(-c(no_lod_ppt,no2_lod_ppt,no_flag,no2_flag,oh_molecules_cm3,hono_err_percent))
   
 
 dat = read.csv("output/data/all_data_utc_updated_nox_hono.csv") %>% 
   # filter(year == 2023) %>%
   mutate(date = ymd_hms(date)) %>% 
-  bind_rows(dat_sep24)
+  bind_rows(dat_sep24) %>% 
+  mutate(pollution_flag = ifelse(is.na(pollution_flag),"Baseline",pollution_flag))
 
 #unit conversions and data filled in where necessary
 dat_parameterisation = dat %>% 
@@ -387,6 +387,7 @@ arna_data = read.csv("data/hono/arna_hono/Renoxification_data_for_Anna_v2.csv") 
   select(date,
          hono = HONO_pptV,
          hono_err = HONO_Uncertainty_ppt,
+         no2_ppt = NO2_pptV,
          rh = RH,
          no = NO_pptV,
          jhno3 = J_HNO3,
@@ -490,14 +491,14 @@ breaks_fun <- function(x) {
   if(max(x) > 10) {
     seq(0,12,3)
   } else if(max(x) < 0.5) {
-    seq(0,0.15,0.05)
+    seq(0,0.5,0.1)
   }
   else {pretty(x)}
 }
 
 arna_ground %>% 
   filter(is.na(campaign) == F,
-         campaign == "February 2023" | campaign == "ARNA 2019" | campaign == "ARNA 2020",
+         campaign == "February 2023" | campaign == "ARNA 2019" | campaign == "ARNA 2020" | campaign == "September 2024",
          altitude < 500 | is.na(altitude) == T) %>% 
   select(-c(fluoride_ug_m3,msa_ug_m3)) %>%
   rename_with(~str_remove(.,"_ug_m3")) %>%
@@ -518,7 +519,7 @@ arna_ground %>%
                 .fns = ~ . - get(paste0(cur_column(),"_err")),
                 .names = "{col}_min_err")) %>%
   filter(is.na(campaign) == F,
-         campaign == "February 2023" | campaign == "ARNA 2019" | campaign == "ARNA 2020",
+         campaign == "February 2023" | campaign == "ARNA 2019" | campaign == "ARNA 2020" | campaign == "September 2024",
          altitude < 500 | is.na(altitude) == T) %>%
   rename(`f[Andersen]` = f_ratio_simone,
          `f[Rowlinson]` = f_ratio_matt) %>% 
@@ -559,17 +560,20 @@ arna_ground %>%
                     axes = "margins") +
   # facet_wrap(~name,scales = "free_x") +
   theme_bw() +
-  scale_colour_manual(values = c("steelblue1","navy","darkorange"),
-                      breaks = c("ARNA 2019","ARNA 2020","February 2023")) +
+  scale_colour_manual(values = c("steelblue1","navy","darkorange","goldenrod1"),
+                      breaks = c("ARNA 2019","ARNA 2020","February 2023","September 2024")) +
   scale_x_continuous(breaks = breaks_fun) +
   labs(x = expression(Aerosol~(ug/m^3)),
        y = expression(f[obs]/f[parametrised]),
        col = NULL) +
-  stat_cor(aes(aerosol_v,f_v,label = after_stat(rr.label))) +
+  stat_cor(aes(aerosol_v,f_v,label = after_stat(rr.label)),
+             label.x = 0, label.y = 5.8, # set label position if needed
+           r.digits = 2 ) +
   theme(legend.position = "top",
         text = element_text(size = 20),
         panel.spacing = unit(1,"lines")) +
   geom_hline(yintercept = 1,linetype = "dashed") +
+  ylim(-2.75,6) +
   # xlim(1,1.1)
   # scale_colour_viridis_d() +
   NULL
@@ -586,49 +590,6 @@ r_squared <- summary(model)$r.squared
 #        path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images",
 #        width = 40,
 #        height = 30,
-#        units = 'cm')
-
-# With 2024 data ----------------------------------------------------------
-
-hono_sep24 = read.csv("~/Cape Verde/cvao_hono_sep24/output/processed_data/hono_sep24_pss_night_za.csv") %>% 
-  rename_at(vars(ends_with("_za")), ~str_remove(.,"_za")) %>% 
-  mutate(date = ymd_hms(date),
-         f_ratio_matt = f_calc/f_para_matt,
-         f_ratio_simone = f_calc/f_para_simone) %>% 
-  rename(hono_ppt = hono) %>% 
-  timeAverage("1 day")
-
-arna_ground24 = arna_ground %>% 
-  bind_rows(hono_sep24) %>% 
-  mutate(campaign = ifelse(date > "2024-01-01","September 2024 (ZA zeroes)",campaign))
-
-arna_ground24 %>% 
-  filter(is.na(campaign) == F,
-         is.na(hono_ppt) == F,
-         altitude < 500 | is.na(altitude) == T,
-         campaign != "November 2015",
-         campaign != "August 2019",
-         campaign != "February 2020") %>% 
-  rename("Andersen" = f_ratio_simone,
-         "Rowlinson" = f_ratio_matt) %>% 
-  pivot_longer(c("Andersen","Rowlinson")) %>% 
-  ggplot(aes(rh,value,col = campaign)) +
-  geom_point(size = 2.5) +
-  theme_bw() +
-  facet_grid(cols = vars(name)) +
-  scale_colour_manual(values = c("steelblue1","navy","darkolivegreen3","springgreen4","darkorange","goldenrod1"),
-                      breaks = c("ARNA 2019","ARNA 2020","November 2015","August 2019","February 2023","September 2024 (ZA zeroes)")) +
-  labs(x = "RH (%)",
-       y = expression(f[obs]/f[parametrised]),
-       col = NULL) +
-  theme(legend.position = "top",
-        text = element_text(size = 20)) +
-  NULL
-
-# ggsave('f_ratio_vs_rh_all_campaigns_york_mbl_za.png',
-#        path = "~/Writing/Thesis/Chapter 4 (HONO in CVAO)/Images/sep24",
-#        width = 30,
-#        height = 12,
 #        units = 'cm')
 
 # f ratio with RH and pH --------------------------------------------------
@@ -710,6 +671,59 @@ arna_feb23 %>%
   # scale_colour_manual(values = c("darkorange","black","steelblue1"),
   #                     breaks = c("ARNA 2019 flight campaign","ARNA 2020 flight campaign","February 2023 ground campaign")) +
   NULL
+
+# Relationship between missing HONO source and various --------------------
+
+arna_ground %>% 
+  mutate(jhno3_hour = jhno3 * 3600,
+         nitrate_ppt = molecules_cm3_to_ppt(nitrate_molecules_cm3),
+         jhno3_nitrate = jhno3_hour * nitrate_ppt,
+         missing_production_ppt_hour = molecules_cm3_to_ppt(missing_production) * 3600,
+         ss_ca = ss_aerosol(sodium_ug_m3,ca),
+         nss_ca = nss_aerosol(ss_ca,calcium_ug_m3),
+         ss_cl = ss_aerosol(sodium_ug_m3,cl),
+         nss_cl = nss_aerosol(ss_cl,chloride_ug_m3),
+         ss_k = ss_aerosol(sodium_ug_m3,k),
+         nss_k = nss_aerosol(ss_k,potassium_ug_m3),
+         ss_mg = ss_aerosol(sodium_ug_m3,mg),
+         nss_mg = nss_aerosol(ss_mg,magnesium_ug_m3),
+         ss_so4 = ss_aerosol(sodium_ug_m3,so4),
+         nss_so4 = nss_aerosol(ss_so4,sulfate_ug_m3),
+         aerosol_type = case_when(nss_ca > 5 ~ "Dust/Sea salt",
+                                  nss_k/nss_ca > 0.24 & nitrate_ug_m3/nss_so4 > 1.4 ~ "Biomass burning",
+                                  sodium_ug_m3 > 1 & chloride_ug_m3 > 4 ~ "Sea salt"),
+         cl_no = chloride_ug_m3/nitrate_ug_m3,
+         na_no = sodium_ug_m3/nitrate_ug_m3) %>% 
+  filter(
+    # altitude <= 500 | is.na(altitude) == T,
+    campaign == "ARNA 2019" | campaign == "ARNA 2020" |
+      campaign == "February 2023" | campaign == "September 2024"
+  ) %>% 
+  rename(Calcium = calcium_ug_m3,
+         Potassium = potassium_ug_m3,
+         Magnesium = magnesium_ug_m3) %>% 
+  # pivot_longer(c(Calcium,Potassium,Magnesium)) %>% 
+  ggplot(aes(jhno3_nitrate,missing_production_ppt_hour,col = aerosol_type,fill = aerosol_type,shape = campaign)) +
+  theme_bw() +
+  geom_point(size = 3) +
+  scale_shape_manual(values = c(24,25,19,20)) +
+  labs(x = expression(pNO[3]~x~j[HNO[3]]~(ug~m^{-3})),
+       y = expression(Missing~HONO~production~(ppt~h^{-1})),
+       col = NULL,
+       fill = NULL,
+       shape = NULL) +
+  # facet_wrap(~name,scales = "free_x") +
+  theme(legend.position = "top",
+        text = element_text(size = 16)
+  ) +
+  # scale_colour_viridis_c() +
+  NULL
+
+ggsave('cvao_arna_dust_tracers_mbl.png',
+       path = "output/plots/pre-thesis_plots",
+       width = 30,
+       height = 12,
+       units = 'cm')
 
 # Enhancement diurnals ----------------------------------------------------
 
@@ -1192,7 +1206,7 @@ surface_area = read.csv("data/hono/arna_hono/Renoxification_data_for_Anna.csv") 
 
 sa = max(surface_area$sa_m) #maximum surface area measured
 sa_paper = 215 *10^-6
-k_hydro = (gamma * sa_paper * v)/4
+k_hydro = (gamma * sa * v)/4
 
 no2_hydrolysis_pss = dat_parameterisation %>% 
   mutate(pollution_flag = case_when(ws <= 2 | wd >= 100 & wd <= 340 ~ "Local pollution (met)",
@@ -1200,13 +1214,31 @@ no2_hydrolysis_pss = dat_parameterisation %>%
                                     TRUE ~ "Baseline"),
     #no2_hydro = ifelse(year == 2019 & day > 26,NA_real_,k_hydro * no2 * 3600),
          no2_hydro = k_hydro * no2_ppt * 3600) %>% 
-  filter(pollution_flag == "Baseline") %>% 
+  filter(campaign == "ARNA 2019" | campaign == "ARNA 2020" | campaign == "February 2023" | campaign == "September 2024",
+         pollution_flag == "Baseline") %>% 
   group_by(campaign) %>% 
   summarise(no2_hydro_max = max(no2_hydro,na.rm = T),
             no2_hydro_min = min(no2_hydro,na.rm = T),
             no2_hydro_mean = mean(no2_hydro,na.rm = T))
 
 no2_hydro_max = max(no2_hydrolysis_pss$no2_hydro,na.rm = T)
+
+#calculating what gamma would need to be to account for missing HONO production
+test = arna_ground %>% 
+  filter(campaign == "ARNA 2019" | campaign == "ARNA 2020" |
+           campaign == "February 2023" | campaign == "September 2024") %>% 
+  mutate(missing_production_ppt = molecules_cm3_to_ppt(missing_production)) %>% 
+  select(date,campaign,missing_production_ppt,no2_ppt) %>% 
+  # group_by(campaign) %>% 
+  # summarise(across(c(missing_production_ppt,no2_ppt),
+  #                  list(mean = ~mean(.,na.rm = T),
+  #                       max = ~max(.,na.rm = T)))) %>% 
+  mutate(gamma = (4 * missing_production_ppt)/(sa * v * no2_ppt)) %>% 
+  group_by(campaign) %>% 
+  summarise(across(c(missing_production_ppt,no2_ppt,gamma),
+                   list(mean = ~mean(.,na.rm = T),
+                        max = ~max(.,na.rm = T),
+                        min = ~min(.,na.rm = T))))
 
 #plotting what the max hono produced form this per hour would be
 no2_hydrolysis_pss %>% 
