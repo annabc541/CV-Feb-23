@@ -72,7 +72,7 @@ dat_sep24 = read.csv("~/Cape Verde/cvao_hono_sep24/output/processed_data/sept24_
   mutate(date = ymd_hms(date),
          year = year(date),
          pollution_flag = case_when(ws <= 2 | wd >= 100 & wd <= 340 ~ "Local pollution (met)",
-                                    date > "2024-09-11 03:00" & date < "2024-09-13 15:00" ~ "Local pollution",
+                                    date > "2024-09-11 03:00" & date <= "2024-09-13 15:00" ~ "Local pollution",
                                     TRUE ~ "Baseline"),
          hono = ifelse(pollution_flag == "Baseline",hono,NA_real_),
          hono_err = ifelse(pollution_flag == "Baseline",hono_err,NA_real_)) %>% 
@@ -115,12 +115,14 @@ dat_parameterisation = dat %>%
 
 hourly_pss = dat_parameterisation %>%
   filter(hour >= 11 & hour <= 15) %>%  #only looking at daytime values
-  mutate(lifetime = 1/jhono,
+  mutate(lifetime = (1/jhono)/60,
          no_percent_error = ifelse(no_ppt >0 & no_u_ppt >0,no_u_ppt/no_ppt,NA_real_),
          hono_percent_error = ifelse(hono_ppt >0 & hono_err >0,hono_err/hono_ppt,NA_real_),
          h = lifetime * dv,
          kdep = 0.01/h,
+         no_molecules = ppt_to_molecules_cm3(no_ppt),
          production_without_nitrate = kp * oh_molecules_cm3 * ppt_to_molecules_cm3(no_ppt),
+         oh_no_rate = (1/(kp * no_molecules))/60,
          pwc_error = sqrt(oh_error^2 + no_percent_error^2),
          loss = (jhono + (kl*oh_molecules_cm3) + kdep) * ppt_to_molecules_cm3(hono_ppt),
          loss_error = sqrt((j_error)^2 + (oh_error)^2 + (j_error)^2 + (hono_err/hono_ppt)^2),
@@ -134,13 +136,16 @@ hourly_pss = dat_parameterisation %>%
                                           # / (jhono + (kl*oh_molecules_cm3) + kdep))
          )
 
-error_mean = mean(hourly_pss$pwc_error,na.rm = T)
-lifetime_median = median(hourly_pss$lifetime,na.rm = T) /60
+# error_mean = mean(hourly_pss$pwc_error,na.rm = T)
+# lifetime_median = median(hourly_pss$lifetime,na.rm = T) /60
 
-daily_f = hourly_pss %>% 
-  timeAverage("1 day") %>% 
-  select(date,f_para_simone,f_para_matt,f_calc,f_calc_error,lifetime) %>% 
-  filter(is.na(f_para_simone) == F & is.na(f_para_matt) == F)
+daily_f_no = hourly_pss %>% 
+  # timeAverage("1 day") %>% 
+  # select(date,year,f_para_simone,f_para_matt,f_calc,f_calc_error,lifetime,oh_no_rate) %>% 
+  # filter(is.na(f_para_simone) == F & is.na(f_para_matt) == F)
+  group_by(year) %>%
+  summarise(across(c(lifetime,oh_no_rate,no_molecules),
+                   list(mean = ~mean(.,na.rm = T))))
 
 daily_pss = dat_parameterisation %>%
   left_join(daily_f,by = "date") %>% 
@@ -442,6 +447,12 @@ arna_pss = arna %>%
                                                / (jhono + (kl*oh_molecules_cm3) + kdep)),
          campaign = ifelse(date < "2020-01-01","ARNA 2019","ARNA 2020"))
 
+arna_f = arna_pss %>% 
+  group_by(campaign) %>% 
+  summarise(across(c(f_calc:f_para_matt),
+                   list(mean = ~mean(.,na.rm = T),
+                        two_sd = ~2*sd(.,na.rm = T))))
+
 # arna_pss %>% 
 #   select(f_obs = f_calc,nitrate_ug_m3:potassium_ug_m3) %>% 
 #   corPlot()
@@ -471,6 +482,8 @@ arna_pss %>%
 
 arna_ground = daily_pss %>% 
   timeAverage("1 day") %>%
+  rename(year = year.x) %>% 
+  select(-year.y) %>% 
   mutate(campaign = case_when(year == 2015 ~ "November 2015",
                               year == 2019 ~ "August 2019",
                               year == 2020 ~ "February 2020",
@@ -674,10 +687,30 @@ arna_feb23 %>%
 
 # Relationship between missing HONO source and various --------------------
 
+#seawater concentrations of ions are used to calculate ss and non-ss contribution to aersosol ions
+#assumption is that all na aerosol is from seawater
+#ss_k = na_aerosol * (k_seawater/na_seawater)
+#mM conc (from Stumm and Morgan):
+#na = 468
+mg = 53.2
+k = 10.2
+ca = 10.2
+cl = 545
+so4 = 28.2
+
 arna_ground %>% 
   mutate(jhno3_hour = jhno3 * 3600,
          nitrate_ppt = molecules_cm3_to_ppt(nitrate_molecules_cm3),
+         calcium_molecules_cm3 = (calcium_ug_m3* 10^-12 *6.022 * 10^23)/40.078,
+         magnesium_molecules_cm3 = (magnesium_ug_m3* 10^-12 *6.022 * 10^23)/24.305,
+         potassium_molecules_cm3 = (potassium_ug_m3* 10^-12 *6.022 * 10^23)/39.098,
+         calcium_ppt = molecules_cm3_to_ppt(calcium_molecules_cm3),
+         magnesium_ppt = molecules_cm3_to_ppt(magnesium_molecules_cm3),
+         potassium_ppt = molecules_cm3_to_ppt(potassium_molecules_cm3),
          jhno3_nitrate = jhno3_hour * nitrate_ppt,
+         jhno3_nitrate_ca = jhno3_hour  * calcium_ppt,
+         jhno3_nitrate_k = jhno3_hour  * potassium_ppt,
+         jhno3_nitrate_mg = jhno3_hour  * magnesium_ppt,
          missing_production_ppt_hour = molecules_cm3_to_ppt(missing_production) * 3600,
          ss_ca = ss_aerosol(sodium_ug_m3,ca),
          nss_ca = nss_aerosol(ss_ca,calcium_ug_m3),
@@ -695,20 +728,22 @@ arna_ground %>%
          cl_no = chloride_ug_m3/nitrate_ug_m3,
          na_no = sodium_ug_m3/nitrate_ug_m3) %>% 
   filter(
+    # aerosol_type != "Dust/Sea salt",
     # altitude <= 500 | is.na(altitude) == T,
     campaign == "ARNA 2019" | campaign == "ARNA 2020" |
       campaign == "February 2023" | campaign == "September 2024"
   ) %>% 
-  rename(Calcium = calcium_ug_m3,
-         Potassium = potassium_ug_m3,
-         Magnesium = magnesium_ug_m3) %>% 
-  # pivot_longer(c(Calcium,Potassium,Magnesium)) %>% 
-  ggplot(aes(jhno3_nitrate,missing_production_ppt_hour,col = aerosol_type,fill = aerosol_type,shape = campaign)) +
+  # rename(Calcium = calcium_ug_m3,
+  #        Potassium = potassium_ug_m3,
+  #        Magnesium = magnesium_ug_m3) %>% 
+  # pivot_longer(c(jhno3_hour,jhno3_nitrate,jhno3_nitrate_ca,jhno3_nitrate_k,jhno3_nitrate_mg)) %>%
+  ggplot(aes(jhno3_nitrate,missing_production_ppt_hour,col = nss_k)) +
   theme_bw() +
   geom_point(size = 3) +
   scale_shape_manual(values = c(24,25,19,20)) +
-  labs(x = expression(pNO[3]~x~j[HNO[3]]~(ug~m^{-3})),
-       y = expression(Missing~HONO~production~(ppt~h^{-1})),
+  labs(y = NULL,
+    x = expression(pNO[3]~x~j[HNO[3]]~(ppt~h^{-1})),
+       # y = expression(Missing~HONO~production~(ppt~h^{-1})),
        col = NULL,
        fill = NULL,
        shape = NULL) +
@@ -716,13 +751,15 @@ arna_ground %>%
   theme(legend.position = "top",
         text = element_text(size = 16)
   ) +
-  # scale_colour_viridis_c() +
+  scale_colour_viridis_c(
+    # breaks = seq(0,12,by = 3)
+    ) +
   NULL
 
-ggsave('cvao_arna_dust_tracers_mbl.png',
+ggsave('pHONO_pNO3_jHNO3_nss_k.png',
        path = "output/plots/pre-thesis_plots",
-       width = 30,
-       height = 12,
+       width = 11,
+       height = 14,
        units = 'cm')
 
 # Enhancement diurnals ----------------------------------------------------
@@ -1261,3 +1298,59 @@ ggsave('no2_timeseries.svg',
        width = 30,
        height = 12,
        units = 'cm')
+
+# HONO and NOx mixing ratios comparison -----------------------------------
+
+hono_production_loss_rates = dat_parameterisation %>%
+  filter(hour >= 11 & hour <= 15,
+         year >= 2023,
+         no_ppt > 0) %>%  #only looking at daytime values
+  mutate(lifetime = (1/jhono)/60,
+         h = lifetime * dv,
+         kdep = 0.01/h,
+         no_molecules = ppt_to_molecules_cm3(no_ppt),
+         production_without_nitrate = kp * oh_molecules_cm3 * ppt_to_molecules_cm3(no_ppt),
+         no_oh = molecules_cm3_to_ppt(production_without_nitrate) * 3600,
+         loss = (jhono + (kl*oh_molecules_cm3) + kdep) * ppt_to_molecules_cm3(hono_ppt),
+         hono_photolysis = jhono * hono_ppt * 3600,
+         hono_pss = molecules_cm3_to_ppt((production_without_nitrate) / (jhono + (kl*oh_molecules_cm3) + kdep)))
+
+#seeing what the average hourly HONO lost to photolysis at midday was in 2023 and 2024
+#and what the hourly average HONO production from NO + OH was
+check = hono_production_loss_rates %>% 
+  select(date,hono_ppt,jhono,hono_photolysis,no_oh) %>% 
+  timeAverage("1 year")
+
+#checking and plotting HONO and NOx mixing ratios at midday
+test = dat_parameterisation %>% 
+  filter(hour >= 11 & hour <= 15,
+         year >= 2023) %>% 
+  mutate(nox_ppt = no_ppt + no2_ppt) %>% 
+  timeAverage("1 day")
+# # filter(is.na(hono_ppt) == F & is.na(no_ppt) == F & is.na(no2_ppt) == F) %>% 
+# select(date,hono_ppt,no_ppt,no2_ppt,nox_ppt)
+
+test %>% 
+  filter(is.na(year) == F,
+         is.na(hono_ppt) == F) %>% 
+  rename(HONO = hono_ppt,
+         NOx = nox_ppt) %>% 
+  pivot_longer(c(HONO,NOx)) %>% 
+  mutate(campaign = case_when(year == 2023 ~ "Feb 2023",
+                              year == 2024 ~ "Sep 2024")) %>% 
+  ggplot(aes(date,value,col = name)) +
+  theme_bw() +
+  facet_wrap(~campaign,ncol =1,scales = "free") +
+  geom_point(size = 2.5) +
+  theme(legend.position = "top",
+        text = element_text(size = 16)) +
+  labs(x = NULL,
+       col = NULL,
+       y = "Mixing ratio (ppt)",) +
+  scale_x_datetime(date_breaks = "2 days",date_labels = "%b %d")
+
+# ggsave('mean_midday_hono_nox.png',
+#        path = "output/plots/pre-thesis_plots",
+#        width = 30,
+#        height = 10.5,
+#        units = 'cm')

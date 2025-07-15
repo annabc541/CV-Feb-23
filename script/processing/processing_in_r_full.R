@@ -294,13 +294,15 @@ processed_dat1 = despiked_dat %>%
   mutate(hono = ifelse(instrumental_noise_flag == 1, NA_real_,hono),
          ch1_ppt = ifelse(instrumental_noise_flag == 1, NA_real_,ch1_ppt),
          ch2_ppt = ifelse(instrumental_noise_flag == 1, NA_real_,ch2_ppt),
+         ch1 = ifelse(instrumental_noise_flag == 1, NA_real_,ch1),
+         ch2 = ifelse(instrumental_noise_flag == 1, NA_real_,ch2),
          hono_lod = lod(ch1_zero_sd,ch2_zero_sd,slope_cal1,slope_cal2),
          hono_err =((hono_lod)^2 + (cal$cal_error_ch1*ch1_ppt)^2 + (cal$cal_error_ch2*ch2_ppt)^2)^0.5,
          # hono_err_percent = hono_err/hono * 100,
          hono_err_percent = ifelse(hono>0 & hono_err>0 & hono>hono_err,hono_err/hono *100,NA_real_),
          # hono_err_manual = hono * 0.1 + hono_lod,
          # hono_err_manual_prop = ((hono*0.1)^2+(hono_lod)^2)^0.5,
-         measuring_conditions = "Reagents 1, cal 2") %>%
+         measuring_conditions = "ZA zeroes") %>%
   select(date,hono,hono_lod,hono_err,hono_err_percent,flag,measuring_conditions)
 
 # Zeroes r2 (za) ------------------------------------------------------------------
@@ -498,11 +500,11 @@ slope_cal2 = summary(model_cal2)$coefficients[2,1]
 # Applying cal r2 ------------------------------------------------------------
 
 dat2_calibrated = night_zeroed %>% 
-  select(-c(time,flag,night_flag)) %>% 
+  select(-c(time,flag,night_flag)) %>%
   mutate(ch1_ppt = ch1_zeroed * slope_cal1,
          ch2_ppt = ch2_zeroed * slope_cal2,
          hono = ppt(ch1_ppt,ch2_ppt,sampling_efficiency),
-         hono_lod = lod(ch1_zero_sd,ch2_zero_sd,slope_cal1,slope_cal2),
+         # hono_lod = lod(ch1_zero_sd,ch2_zero_sd,slope_cal1,slope_cal2),
          # hono_err = abs(hono * rel_error/100 + hono_lod),
          date = date - time_corr,
          flag = (case_when(between(date,as.POSIXct("2023-02-17 08:30"),as.POSIXct("2023-02-17 18:12")) ~ 1, #changing reagents
@@ -544,9 +546,11 @@ dat2_calibrated = night_zeroed %>%
                            TRUE ~ 0)))
 
 processed_dat2 = dat2_calibrated %>%
+  mutate(measuring_conditions = "Nighttime zeroes") %>% 
   # filter(flag == 0) %>%
-  mutate(hono_err =((hono_lod)^2 + (cal$cal_error_ch1*ch1_ppt)^2 + (cal$cal_error_ch2*ch2_ppt)^2)^0.5,
-         hono_err_percent = ifelse(hono>0 & hono_err>0 & hono>hono_err,hono_err/hono *100,NA_real_)) %>% 
+  mutate(hono_lod = lod(ch1_zero_sd,ch2_zero_sd,slope_cal1,slope_cal2),
+         hono_err =((hono_lod)^2 + (cal$cal_error_ch1*ch1_ppt)^2 + (cal$cal_error_ch2*ch2_ppt)^2)^0.5,
+         hono_err_percent = ifelse(hono>0 & hono_err>0 & hono>hono_err,hono_err/hono *100,NA_real_)) %>%
   select(date,hono,hono_lod,hono_err,hono_err_percent,flag,measuring_conditions)
 
 # Zeroes r0.5 -------------------------------------------------------------
@@ -720,7 +724,7 @@ processed_dat3 = despiked_dat %>%
          hono_lod = lod(ch1_zero_sd,ch2_zero_sd,slope_cal1,slope_cal2),
          hono_err =((hono_lod)^2 + (cal$cal_error_ch1*ch1_ppt)^2 + (cal$cal_error_ch2*ch2_ppt)^2)^0.5,
          hono_err_percent = ifelse(hono>0 & hono_err>0 & hono>hono_err,hono_err/hono *100,NA_real_),
-         measuring_conditions = "Reagents 1, cal 1") %>% 
+         measuring_conditions = "ZA zeroes") %>% 
   select(date,hono,hono_lod,hono_err,hono_err_percent,flag,measuring_conditions)
 
 # Final data --------------------------------------------------------------
@@ -741,16 +745,23 @@ final_dat = bind_rows(processed_dat3,processed_dat1,processed_dat2) %>%
          hono_err = ifelse(flag == 0,hono_err,NA_real_),
          hono_lod = ifelse(flag == 0,hono_lod,NA_real_))
 
-hono_lod = mean(final_dat$hono_lod,na.rm = T)
-hono_lod_sd = 2 * sd(final_dat$hono_lod,na.rm = T)
-hono_err = mean(final_dat$hono_err,na.rm = T)
-hono_err_sd = 2 * sd(final_dat$hono_err,na.rm = T)
+final_dat_lod_err = final_dat %>% 
+  group_by(measuring_conditions) %>% 
+  summarise(across(c(hono_err,hono_lod),
+                   list(mean = ~mean(.,na.rm = T),
+                        two_sd = ~2 * sd(.,na.rm = T))))
+
+# hono_lod = mean(final_dat$hono_lod,na.rm = T)
+# hono_lod_sd = 2 * sd(final_dat$hono_lod,na.rm = T)
+# hono_err = mean(final_dat$hono_err,na.rm = T)
+# hono_err_sd = 2 * sd(final_dat$hono_err,na.rm = T)
 
 hourly_dat = final_dat %>% 
   select(-flag) %>% 
   timeAverage("1 hour") %>% 
   mutate(hono_err_percent = ifelse(hono>0 & hono_err>0 & hono>hono_err,hono_err/hono * 100,NA_real_),
-         date = format(date, "%Y-%m-%d %H:%M:%S"))
+         # date = format(date, "%Y-%m-%d %H:%M:%S")
+         )
 
 hourly_dat %>% 
   pivot_longer(c(hono,hono_err,hono_err_percent)) %>% 

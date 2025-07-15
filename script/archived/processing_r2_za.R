@@ -67,13 +67,13 @@ zero_avg = dat2_zeroes_grouped %>%
   mutate(idx = round(idx))
 
 #interpolate between zeroes and subtract zeroes from measurements
-dat2_zeroed_pt1 = dat2_zero_flag %>% 
+dat2_zeroed = dat2_zero_flag %>% 
   mutate(idx = 1:nrow(.)) %>%
-  filter(date < "2023-02-18 16:52") %>% 
+  # filter(date < "2023-02-18 16:52") %>% 
   left_join(zero_avg) %>% 
   mutate(ch1_zeroes = na.approx(ch1_zeroes,na.rm = F),
          ch2_zeroes = na.approx(ch2_zeroes,na.rm = F)) %>% 
-  fill(ch1_zeroes,ch2_zeroes,.direction = "up") %>% 
+  fill(ch1_zeroes,ch2_zeroes,.direction = "downup") %>% 
   mutate(ch1_zeroed = ch1 - ch1_zeroes,
          ch2_zeroed = ch2 - ch2_zeroes)
 
