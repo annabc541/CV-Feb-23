@@ -6,6 +6,7 @@ library(openair)
 library(ggh4x)
 library(ggpubr)
 library(plotly)
+library(ggpmisc)
 
 Sys.setenv(TZ = 'UTC')
 setwd("~/Cape Verde/peroxy_campaign")
@@ -115,14 +116,12 @@ dat_parameterisation = dat %>%
 
 hourly_pss = dat_parameterisation %>%
   filter(hour >= 11 & hour <= 15) %>%  #only looking at daytime values
-  mutate(lifetime = (1/jhono)/60,
+  mutate(lifetime = (1/jhono),
          no_percent_error = ifelse(no_ppt >0 & no_u_ppt >0,no_u_ppt/no_ppt,NA_real_),
          hono_percent_error = ifelse(hono_ppt >0 & hono_err >0,hono_err/hono_ppt,NA_real_),
          h = lifetime * dv,
          kdep = 0.01/h,
-         no_molecules = ppt_to_molecules_cm3(no_ppt),
          production_without_nitrate = kp * oh_molecules_cm3 * ppt_to_molecules_cm3(no_ppt),
-         oh_no_rate = (1/(kp * no_molecules))/60,
          pwc_error = sqrt(oh_error^2 + no_percent_error^2),
          loss = (jhono + (kl*oh_molecules_cm3) + kdep) * ppt_to_molecules_cm3(hono_ppt),
          loss_error = sqrt((j_error)^2 + (oh_error)^2 + (j_error)^2 + (hono_err/hono_ppt)^2),
@@ -139,13 +138,10 @@ hourly_pss = dat_parameterisation %>%
 # error_mean = mean(hourly_pss$pwc_error,na.rm = T)
 # lifetime_median = median(hourly_pss$lifetime,na.rm = T) /60
 
-daily_f_no = hourly_pss %>% 
-  # timeAverage("1 day") %>% 
-  # select(date,year,f_para_simone,f_para_matt,f_calc,f_calc_error,lifetime,oh_no_rate) %>% 
-  # filter(is.na(f_para_simone) == F & is.na(f_para_matt) == F)
-  group_by(year) %>%
-  summarise(across(c(lifetime,oh_no_rate,no_molecules),
-                   list(mean = ~mean(.,na.rm = T))))
+daily_f = hourly_pss %>% 
+  timeAverage("1 day") %>%
+  select(date,year,f_para_simone,f_para_matt,f_calc,f_calc_error,lifetime) %>%
+  filter(is.na(f_para_simone) == F & is.na(f_para_matt) == F)
 
 daily_pss = dat_parameterisation %>%
   left_join(daily_f,by = "date") %>% 
@@ -1301,24 +1297,20 @@ ggsave('no2_timeseries.svg',
 
 # HONO and NOx mixing ratios comparison -----------------------------------
 
-hono_production_loss_rates = dat_parameterisation %>%
+prod_loss_rates = daily_pss %>% 
   filter(hour >= 11 & hour <= 15,
-         year >= 2023,
-         no_ppt > 0) %>%  #only looking at daytime values
-  mutate(lifetime = (1/jhono)/60,
-         h = lifetime * dv,
-         kdep = 0.01/h,
-         no_molecules = ppt_to_molecules_cm3(no_ppt),
-         production_without_nitrate = kp * oh_molecules_cm3 * ppt_to_molecules_cm3(no_ppt),
-         no_oh = molecules_cm3_to_ppt(production_without_nitrate) * 3600,
-         loss = (jhono + (kl*oh_molecules_cm3) + kdep) * ppt_to_molecules_cm3(hono_ppt),
+         year.x >= 2023) %>% 
+  mutate(pno3_hono_prod_matt = jhno3 * molecules_cm3_to_ppt(nitrate_molecules_cm3) * f_para_matt * 3600,
+         pno3_hono_prod_simone = jhno3 * molecules_cm3_to_ppt(nitrate_molecules_cm3) * f_para_simone * 3600,
+         pno3_hono_prod = jhno3 * molecules_cm3_to_ppt(nitrate_molecules_cm3) * 3600,
          hono_photolysis = jhono * hono_ppt * 3600,
-         hono_pss = molecules_cm3_to_ppt((production_without_nitrate) / (jhono + (kl*oh_molecules_cm3) + kdep)))
+         no_oh = molecules_cm3_to_ppt(production_without_nitrate) * 3600,
+         no2_hydro = k_hydro * no2_ppt * 3600,
+         dep = kdep * hono_ppt * 3600)
 
-#seeing what the average hourly HONO lost to photolysis at midday was in 2023 and 2024
-#and what the hourly average HONO production from NO + OH was
-check = hono_production_loss_rates %>% 
-  select(date,hono_ppt,jhono,hono_photolysis,no_oh) %>% 
+#seeing what the average hourly HONO production and loss values were
+check = prod_loss_rates %>% 
+  select(date,hono_ppt,jhono,hono_photolysis,dep,no_oh,no2_hydro,pno3_hono_prod,pno3_hono_prod_matt,pno3_hono_prod_simone) %>% 
   timeAverage("1 year")
 
 #checking and plotting HONO and NOx mixing ratios at midday
@@ -1350,6 +1342,45 @@ test %>%
   scale_x_datetime(date_breaks = "2 days",date_labels = "%b %d")
 
 # ggsave('mean_midday_hono_nox.png',
+#        path = "output/plots/pre-thesis_plots",
+#        width = 30,
+#        height = 10.5,
+#        units = 'cm')
+
+
+# NOx PSS from HONO photolysis --------------------------------------------
+
+k_hno3 = 4.1*10^-11 #rate constant for OH+NO2
+
+nox_prod_hono = dat_parameterisation %>% 
+  filter(hour >= 11 & hour <= 15) %>%
+  mutate(nox_ppt = no_ppt + no2_ppt,
+         no_molecules = ppt_to_molecules_cm3(no_ppt),
+         no2_molecules = ppt_to_molecules_cm3(no2_ppt),
+         hono_molecules = ppt_to_molecules_cm3(hono_ppt),
+         nox_pss = molecules_cm3_to_ppt((jhono*hono_molecules)/((kp + k_hno3)*oh_molecules_cm3 + k_hydro)))
+
+nox_prod_hono %>% 
+  timeAverage("1 day") %>% 
+  rename(HONO = hono_ppt,
+         NOx = nox_ppt,
+         `Calculated NOx` = nox_pss) %>% 
+  filter(is.na(year) == F,
+         year >= 2023,
+         is.na(HONO) == F) %>% 
+  pivot_longer(c(HONO,NOx,`Calculated NOx`)) %>% 
+  ggplot(aes(date,value,col = name)) +
+  theme_bw() +
+  geom_point(size = 2.5) +
+  facet_wrap(~year,ncol = 1,scales = "free") +
+  labs(x = NULL,
+       y = "Mixing ratio (ppt)",
+       col = NULL) +
+  theme(legend.position = "top",
+        text = element_text(size = 16)) +
+  scale_x_datetime(date_breaks = "2 days",date_labels = "%b %d")
+
+# ggsave('nox_pss_from_hono.png',
 #        path = "output/plots/pre-thesis_plots",
 #        width = 30,
 #        height = 10.5,
